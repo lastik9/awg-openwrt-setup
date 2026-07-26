@@ -113,7 +113,9 @@ if [ "$WIZARD" = 1 ] || { [ ! -r "$ENV_FILE" ] && [ -t 0 ]; }; then
   # 1) имя интерфейса
   while :; do
     ask "Имя интерфейса (напр. awg_nl, awg_de): "
-    raw="$REPLY"
+    # берём только ПЕРВЫЙ токен ввода: защита от мусора/typeahead в буфере,
+    # иначе tr -cd склеил бы многословный ввод в одно имя.
+    raw=$(printf '%s' "$REPLY" | awk '{print $1; exit}')
     [ -z "$raw" ] && { warn "Пусто, попробуй ещё раз."; continue; }
     iface=$(normalize_iface "$raw")
     [ -z "$iface" ] && { warn "Недопустимое имя, попробуй ещё раз."; continue; }
@@ -124,6 +126,11 @@ if [ "$WIZARD" = 1 ] || { [ ! -r "$ENV_FILE" ] && [ -t 0 ]; }; then
       warn "Интерфейс '$iface' уже существует. Выбери другое имя."
       continue
     fi
+    # подтверждение — последний рубеж против опечаток и мусора из буфера ввода
+    ask "Создать интерфейс с именем '$iface'? (Y/n): "
+    case "$REPLY" in
+      n|N|н|Н|no|NO|нет|НЕТ|Нет) continue ;;
+    esac
     break
   done
 
