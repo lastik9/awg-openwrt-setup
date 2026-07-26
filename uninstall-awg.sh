@@ -8,6 +8,7 @@
 #   sh uninstall-awg.sh --iface awgX    # удалить только один интерфейс по имени
 #   sh uninstall-awg.sh --zone myzone   # другое имя зоны
 #   sh uninstall-awg.sh --yes           # не задавать вопросов (кроме удаления пакетов)
+#   sh uninstall-awg.sh --reboot        # тихо перезагрузить в конце, если остались висящие netdev
 #
 # По умолчанию удаляются ВСЕ amneziawg-интерфейсы (мастер создаёт произвольные
 # имена в общей зоне). Указав --iface, удалишь только его.
@@ -18,6 +19,8 @@ set -u
 IFACE=''          # пусто = автообнаружение всех proto=amneziawg
 ZONE='awg'
 ASSUME_YES=0
+DO_REBOOT=0       # --reboot: тихо перезагрузить в конце, если netdev'ы зависли
+REMOVED=''        # имена реально удалённых интерфейсов (для проверки висящих netdev)
 
 log()  { printf '\033[1;32m[+]\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m[!]\033[0m %s\n' "$*"; }
@@ -30,6 +33,7 @@ while [ $# -gt 0 ]; do
     --iface) IFACE="${2:-}"; shift 2 || die "--iface требует имя" ;;
     --zone)  ZONE="${2:-}";  shift 2 || die "--zone требует имя" ;;
     --yes|-y) ASSUME_YES=1; shift ;;
+    --reboot) DO_REBOOT=1; shift ;;
     -h|--help) grep '^#' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) die "Неизвестный аргумент: $1" ;;
   esac
@@ -44,6 +48,17 @@ ask() {
   read -r a 2>/dev/null || return 1
   case "$a" in y|Y|yes|YES|да) return 0 ;; *) return 1 ;; esac
 }
+
+# ---------- 0. предупреждение про podkop ----------
+# Если удаляемые интерфейсы ещё подключены в podkop/forkop, singbox продолжит
+# перехватывать DNS и слать его в мёртвый аутбаунд: пинг по IP будет жить, а
+# имена (интернет) перестанут резолвиться. Скрипт podkop не трогает — убрать
+# интерфейс оттуда должен сам пользователь.
+warn "ПЕРЕД удалением: если эти AWG-интерфейсы подключены в podkop/forkop —"
+warn "сними их там (Services -> Podkop -> убрать интерфейс -> Save & Apply)."
+warn "Иначе podkop продолжит гнать DNS в удалённый интерфейс: пинг по IP будет,"
+warn "а сайты по именам перестанут открываться. Скрипт podkop НЕ трогает."
+echo
 
 # remove_iface NAME — опустить интерфейс, снести его peer-секции и саму секцию
 remove_iface() {
@@ -62,6 +77,7 @@ remove_iface() {
   [ "$_i" -gt 0 ] && log "  peer-секций удалено: $_i"
 
   uci -q delete "network.$_if"
+  REMOVED="$REMOVED $_if"
   log "Интерфейс $_if удалён."
 }
 
@@ -148,3 +164,52 @@ fi
 
 echo
 log "Готово. Podkop не трогался — при необходимости убери интерфейс из его настроек вручную."
+
+# ---------- 4. висящие netdev -> предложить reboot ----------
+# После удаления секций (особенно если пакеты AWG уже сняты — ifdown без kmod/
+# tools не может дочистить kernel-девайс) сам интерфейс может остаться "висеть"
+# до перезагрузки; в LuCI он показывается с пометкой на удаление. Симметрично
+# установке предлагаем reboot — но только если netdev реально ещё существует.
+leftover=''
+for _if in $REMOVED; do
+  ip link show "$_if" >/dev/null 2>&1 && leftover="$leftover $_if"
+done
+
+if [ -n "$leftover" ]; then
+  echo
+  warn "Остались висящие интерфейсы (уйдут только после перезагрузки):$leftover"
+
+  if [ "$DO_REBOOT" = 1 ]; then
+    log "Перезагружаю роутер..."
+    reboot
+    exit 0
+  fi
+  if [ "$ASSUME_YES" = 1 ]; then
+    warn "Тихий режим (--yes): перезагрузи вручную для полной очистки —  reboot"
+    exit 0
+  fi
+
+  # Обратный отсчёт: по таймауту (15с без ответа) — перезагружаем.
+  # Отмена — ввести n/н/no/нет и Enter. Пустой Enter = согласие (reboot).
+  echo
+  ans=''
+  i=15
+  while [ "$i" -gt 0 ]; do
+    printf '\r\033[1;33m[!]\033[0m Перезагрузка через %2d сек для полной очистки. Отмена — [n], затем Enter: ' "$i"
+    if read -t 1 -r ans 2>/dev/null; then
+      break
+    fi
+    i=$((i - 1))
+  done
+  echo
+
+  case "$ans" in
+    n|N|н|Н|no|NO|нет|НЕТ|Нет)
+      warn "Перезагрузка отменена. Висящие интерфейсы уйдут после ручного:  reboot"
+      ;;
+    *)
+      log "Перезагружаю роутер..."
+      reboot
+      ;;
+  esac
+fi

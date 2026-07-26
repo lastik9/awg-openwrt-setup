@@ -135,6 +135,14 @@ sh uninstall-awg.sh
 这些软件包（`kmod-amneziawg`、`amneziawg-tools`、`luci-proto-amneziawg`）是**共享**的：
 若路由器上还有其他 AWG 隧道，建议保留。podkop 不受影响。
 
+> **请先在 podkop 中移除该接口。** 如果被删除的接口仍挂在 podkop/forkop 上，singbox
+> 会继续劫持 DNS 并把它转发到已失效的隧道：按 IP 能 ping 通，但域名无法解析（"断网"）。
+> 卸载前请在 **Services → Podkop → Save & Apply** 中移除该接口。
+
+若删除后接口在 LuCI 中仍显示"待删除"（内核设备会一直保留，直到 netifd 重启 —— 尤其是
+AWG 软件包已被卸载时），脚本会检测到并提示 **带 15 秒倒计时的重启**（与安装时相同）。
+直接回车/超时即重启；输入 `n` 再回车则取消。`--reboot` 参数则静默重启、跳过倒计时（用于自动化）。
+
 ## 安全
 
 - **切勿**提交真实的 `awg.env` —— 其中含有私钥。`.gitignore` 已将其排除。

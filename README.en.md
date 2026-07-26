@@ -150,6 +150,17 @@ AmneziaWG system packages. Those packages (`kmod-amneziawg`, `amneziawg-tools`,
 `luci-proto-amneziawg`) are **shared**: if you run other AWG tunnels on the router,
 keep them. Podkop is left untouched.
 
+> **Detach the interface in podkop first.** If the interface you're removing is still
+> attached in podkop/forkop, singbox keeps hijacking DNS and forwarding it into the
+> dead tunnel: ping by IP works, but sites won't resolve by name ("no internet").
+> Remove the interface in **Services → Podkop → Save & Apply** before uninstalling.
+
+If interfaces stay "marked for deletion" in LuCI after removal (the kernel device
+lingers until netifd is restarted — especially when the AWG packages are already
+gone), the script detects this and offers a **reboot with a 15-second countdown**
+(same as install). Empty Enter/timeout reboots; `n` + Enter cancels. The `--reboot`
+flag reboots silently without the countdown (for automation).
+
 ## Security
 
 - **Never** commit a real `awg.env` — it holds the private key. `.gitignore` blocks it.
