@@ -50,7 +50,7 @@ Podkop скрипт **не настраивает** — после устано�
 **1. Скачай скрипт** (в `/root`):
 
 ```sh
-cd /root && curl -fsSLO "https://raw.githubusercontent.com/lastik9/awg-openwrt-setup/main/setup-awg.sh"
+cd /root && wget -O setup-awg.sh "https://raw.githubusercontent.com/lastik9/awg-openwrt-setup/main/setup-awg.sh"
 ```
 
 **2. Запусти мастер:**
@@ -79,7 +79,7 @@ sh setup-awg.sh
 `.conf` и запусти:
 
 ```sh
-curl -fsSLO "https://raw.githubusercontent.com/lastik9/awg-openwrt-setup/main/awg.env.example"
+wget -O awg.env.example "https://raw.githubusercontent.com/lastik9/awg-openwrt-setup/main/awg.env.example"
 sh setup-awg.sh --from-conf /root/my.conf          # создаст awg.env
 sed -i "s/^KEEPALIVE=.*/KEEPALIVE='25'/" /root/awg.env
 sh setup-awg.sh                                     # поднимет из awg.env

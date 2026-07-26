@@ -128,8 +128,8 @@ if [ "$WIZARD" = 1 ] || { [ ! -r "$ENV_FILE" ] && [ -t 0 ]; }; then
   # 2) редактор для вставки .conf
   tmpconf="/tmp/awg-wizard.$$.conf"
   {
-    echo "# Вставь сюда весь .conf (от [Interface] до конца [Peer]), сохрани и выйди."
-    echo "# Строки, начинающиеся с #, игнорируются."
+    echo "# Paste your full .conf below (from [Interface] to the end of [Peer]),"
+    echo "# then save and quit. Lines starting with # are ignored."
   } > "$tmpconf"
   ed="${EDITOR:-vi}"
   command -v "$ed" >/dev/null 2>&1 || ed=vi
@@ -153,6 +153,12 @@ if [ "$WIZARD" = 1 ] || { [ ! -r "$ENV_FILE" ] && [ -t 0 ]; }; then
     case "$ka" in ''|*[!0-9]*) ka=25 ;; esac
     sed -i "s/^KEEPALIVE=.*/KEEPALIVE='$ka'/" "$ENV_FILE"
   fi
+
+  # 5) русская локаль LuCI (по желанию)
+  ask "Поставить русскую локаль LuCI для AmneziaWG? (y/N): "
+  case "$REPLY" in
+    y|Y|yes|YES|да) sed -i "s/^INSTALL_RU_LANG=.*/INSTALL_RU_LANG='1'/" "$ENV_FILE" ;;
+  esac
 
   log "env собран: $ENV_FILE (интерфейс '$iface', зона '$SHARED_ZONE'). Продолжаю установку..."
 fi
@@ -220,6 +226,8 @@ if [ "$SKIP_IFACE" = 0 ]; then
   [ -n "${MTU:-}" ] && uci set "network.$IFACE.mtu=$MTU"
   # ВАЖНО для podkop: не создаём default route, иначе весь трафик уйдёт в туннель
   uci set "network.$IFACE.defaultroute=0"
+  # снимаем делегирование IPv6-префиксов — для VPN-интерфейса не нужно
+  uci set "network.$IFACE.delegate=0"
 
   # адреса (может быть несколько через запятую)
   uci -q delete "network.$IFACE.addresses"
@@ -309,6 +317,10 @@ fi
 
 # ---------- поднять интерфейс ----------
 log "Поднимаю интерфейс $IFACE..."
+# netifd должен перечитать конфиг, иначе свежесозданный интерфейс ещё "не виден"
+# и ifup проходит вхолостую (до ребута интерфейс не поднимается).
+reload_config 2>/dev/null || /etc/init.d/network reload 2>/dev/null
+sleep 2
 ifup "$IFACE" 2>/dev/null
 sleep 6
 

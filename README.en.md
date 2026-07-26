@@ -51,7 +51,7 @@ Run these commands **on the router** over SSH.
 **1. Download the script** (into `/root`):
 
 ```sh
-cd /root && curl -fsSLO "https://raw.githubusercontent.com/lastik9/awg-openwrt-setup/main/setup-awg.sh"
+cd /root && wget -O setup-awg.sh "https://raw.githubusercontent.com/lastik9/awg-openwrt-setup/main/setup-awg.sh"
 ```
 
 **2. Run the wizard:**
@@ -80,7 +80,7 @@ For a non-interactive path (automation, scripts) — generate `awg.env` from a `
 and run:
 
 ```sh
-curl -fsSLO "https://raw.githubusercontent.com/lastik9/awg-openwrt-setup/main/awg.env.example"
+wget -O awg.env.example "https://raw.githubusercontent.com/lastik9/awg-openwrt-setup/main/awg.env.example"
 sh setup-awg.sh --from-conf /root/my.conf          # creates awg.env
 sed -i "s/^KEEPALIVE=.*/KEEPALIVE='25'/" /root/awg.env
 sh setup-awg.sh                                     # brings it up from awg.env

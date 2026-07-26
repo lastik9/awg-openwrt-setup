@@ -47,7 +47,7 @@
 **1. 下载脚本**（到 `/root`）：
 
 ```sh
-cd /root && curl -fsSLO "https://raw.githubusercontent.com/lastik9/awg-openwrt-setup/main/setup-awg.sh"
+cd /root && wget -O setup-awg.sh "https://raw.githubusercontent.com/lastik9/awg-openwrt-setup/main/setup-awg.sh"
 ```
 
 **2. 运行向导：**
@@ -73,7 +73,7 @@ sh setup-awg.sh
 如需非交互方式（自动化、脚本）—— 从 `.conf` 生成 `awg.env` 再运行：
 
 ```sh
-curl -fsSLO "https://raw.githubusercontent.com/lastik9/awg-openwrt-setup/main/awg.env.example"
+wget -O awg.env.example "https://raw.githubusercontent.com/lastik9/awg-openwrt-setup/main/awg.env.example"
 sh setup-awg.sh --from-conf /root/my.conf          # 生成 awg.env
 sed -i "s/^KEEPALIVE=.*/KEEPALIVE='25'/" /root/awg.env
 sh setup-awg.sh                                     # 从 awg.env 启动
