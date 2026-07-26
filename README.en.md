@@ -46,19 +46,24 @@ in **Services → Podkop** yourself.
 
 ## Installation
 
-Run these commands **on the router** over SSH.
+Run these commands **on the router** over SSH, in `/root`.
 
-**1. Download the script** (into `/root`):
-
-```sh
-cd /root && wget -O setup-awg.sh "https://raw.githubusercontent.com/lastik9/awg-openwrt-setup/main/setup-awg.sh"
-```
-
-**2. Run the wizard:**
+**First install — one command** (download and launch the wizard):
 
 ```sh
-sh setup-awg.sh
+cd /root && wget -O setup-awg.sh "https://raw.githubusercontent.com/lastik9/awg-openwrt-setup/main/setup-awg.sh" && sh setup-awg.sh
 ```
+
+> ⚠️ **First install = one reboot.** When the AmneziaWG packages are installed for the
+> first time, `netifd` only learns the new protocol after a restart. The script detects
+> this, warns you, and asks you to run `reboot` — after which the interface comes up
+> automatically. To let the script reboot the router for you, add `--reboot`:
+>
+> ```sh
+> cd /root && wget -O setup-awg.sh "https://raw.githubusercontent.com/lastik9/awg-openwrt-setup/main/setup-awg.sh" && sh setup-awg.sh --reboot
+> ```
+>
+> On later runs (the protocol is already registered) no reboot is needed — the tunnel comes up right away.
 
 The wizard walks you through:
 - it asks for an **interface name** — pick a meaningful one per server country/location
@@ -96,6 +101,7 @@ Or fill `awg.env` manually from the `awg.env.example` template.
 | `-i`, `--wizard` | force the interactive wizard |
 | `--from-conf FILE` | generate `awg.env` from a `.conf` and exit |
 | `--no-install` | skip package installation, configure only |
+| `--reboot` | reboot the router automatically if proto registration needs a reboot (= `AUTO_REBOOT=1`) |
 | `--env PATH` | use an env file at a different path |
 | `-h`, `--help` | help |
 
