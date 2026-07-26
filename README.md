@@ -110,7 +110,6 @@ sh setup-awg.sh                                     # поднимет из awg.
 |------------|----------|
 | `MAKE_ZONE='1'` | создать firewall-зону `awg` (0 — не трогать фаервол) |
 | `KEEPALIVE='25'` | persistent keepalive; за NAT обязателен |
-| `INSTALL_RU_LANG='1'` | поставить русскую локаль LuCI для AmneziaWG |
 
 ## Несколько серверов
 

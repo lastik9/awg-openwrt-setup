@@ -78,7 +78,6 @@ write_env() {
     echo "KEEPALIVE='$(conf_get PersistentKeepalive "$_conf")'"
     echo "MAKE_ZONE='1'"
     echo "ZONE_NAME='$_zone'"
-    echo "INSTALL_RU_LANG='0'"
   } > "$_out"
 }
 
@@ -156,12 +155,6 @@ if [ "$WIZARD" = 1 ] || { [ ! -r "$ENV_FILE" ] && [ -t 0 ]; }; then
     sed -i "s/^KEEPALIVE=.*/KEEPALIVE='$ka'/" "$ENV_FILE"
   fi
 
-  # 5) русская локаль LuCI (по желанию)
-  ask "Поставить русскую локаль LuCI для AmneziaWG? (y/N): "
-  case "$REPLY" in
-    y|Y|yes|YES|да) sed -i "s/^INSTALL_RU_LANG=.*/INSTALL_RU_LANG='1'/" "$ENV_FILE" ;;
-  esac
-
   log "env собран: $ENV_FILE (интерфейс '$iface', зона '$SHARED_ZONE'). Продолжаю установку..."
 fi
 
@@ -199,16 +192,6 @@ else
 fi
 
 command -v awg >/dev/null || die "awg не найден после установки — настройку прервал."
-
-# ---------- русская локаль LuCI (опция) ----------
-if [ "${INSTALL_RU_LANG:-0}" = 1 ] && [ "$DO_INSTALL" = 1 ]; then
-  log "Ставлю русскую локаль luci-i18n-amneziawg-ru..."
-  if command -v apk >/dev/null 2>&1; then
-    apk add luci-i18n-amneziawg-ru 2>/dev/null || warn "Не удалось поставить локаль (не критично)."
-  elif command -v opkg >/dev/null 2>&1; then
-    opkg update >/dev/null 2>&1; opkg install luci-i18n-amneziawg-ru 2>/dev/null || warn "Не удалось поставить локаль (не критично)."
-  fi
-fi
 
 # ---------- проверка: интерфейс уже есть? ----------
 if uci -q get "network.$IFACE" >/dev/null; then

@@ -111,7 +111,6 @@ Extra options live in `awg.env`:
 |----------|--------|
 | `MAKE_ZONE='1'` | create the `awg` firewall zone (0 — leave firewall alone) |
 | `KEEPALIVE='25'` | persistent keepalive; required behind NAT |
-| `INSTALL_RU_LANG='1'` | install the Russian LuCI locale for AmneziaWG |
 
 ## Multiple servers
 

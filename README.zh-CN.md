@@ -103,7 +103,6 @@ sh setup-awg.sh                                     # 从 awg.env 启动
 |------|------|
 | `MAKE_ZONE='1'` | 创建 `awg` 防火墙区域（0 —— 不改动防火墙） |
 | `KEEPALIVE='25'` | persistent keepalive；位于 NAT 之后时必填 |
-| `INSTALL_RU_LANG='1'` | 安装 AmneziaWG 的 LuCI 俄语语言包 |
 
 ## 多个服务器
 
