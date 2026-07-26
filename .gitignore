@@ -1,0 +1,14 @@
+# НИКОГДА не коммить реальный env с ключами
+awg.env
+awg.env.new
+*.env
+!awg.env.example
+
+# конфиги AmneziaWG/WireGuard с приватными ключами
+*.conf
+*.key
+
+# прочий мусор
+*.bak
+*.tmp
+*.log
