@@ -56,14 +56,10 @@ cd /root && wget -O setup-awg.sh "https://raw.githubusercontent.com/lastik9/awg-
 
 > ⚠️ **First install = one reboot.** When the AmneziaWG packages are installed for the
 > first time, `netifd` only learns the new protocol after a restart. The script detects
-> this, warns you, and asks you to run `reboot` — after which the interface comes up
-> automatically. To let the script reboot the router for you, add `--reboot`:
->
-> ```sh
-> cd /root && wget -O setup-awg.sh "https://raw.githubusercontent.com/lastik9/awg-openwrt-setup/main/setup-awg.sh" && sh setup-awg.sh --reboot
-> ```
->
-> On later runs (the protocol is already registered) no reboot is needed — the tunnel comes up right away.
+> this and, at the end, offers a reboot with a **15-second** countdown: do nothing and the
+> router reboots on its own, after which the interface comes up automatically; to decline,
+> type `n` and press Enter (then run `reboot` yourself later). On later runs (the protocol
+> is already registered) no reboot is triggered — the tunnel comes up right away.
 
 The wizard walks you through:
 - it asks for an **interface name** — pick a meaningful one per server country/location
@@ -101,7 +97,7 @@ Or fill `awg.env` manually from the `awg.env.example` template.
 | `-i`, `--wizard` | force the interactive wizard |
 | `--from-conf FILE` | generate `awg.env` from a `.conf` and exit |
 | `--no-install` | skip package installation, configure only |
-| `--reboot` | reboot the router automatically if proto registration needs a reboot (= `AUTO_REBOOT=1`) |
+| `--reboot` | silent mode: reboot immediately, without the 15s countdown (for automation; = `AUTO_REBOOT=1`) |
 | `--env PATH` | use an env file at a different path |
 | `-h`, `--help` | help |
 

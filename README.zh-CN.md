@@ -51,14 +51,9 @@ cd /root && wget -O setup-awg.sh "https://raw.githubusercontent.com/lastik9/awg-
 ```
 
 > ⚠️ **首次安装 = 一次 reboot。** 首次安装 AmneziaWG 软件包时，`netifd` 只有在重启后
-> 才会识别这个新协议。脚本会自动检测这一情况、给出提示并要求执行 `reboot` —— 重启后
-> 接口会自动启动。若希望脚本自动重启路由器，加上 `--reboot`：
->
-> ```sh
-> cd /root && wget -O setup-awg.sh "https://raw.githubusercontent.com/lastik9/awg-openwrt-setup/main/setup-awg.sh" && sh setup-awg.sh --reboot
-> ```
->
-> 再次运行时（协议已注册）无需重启 —— 隧道会立即启动。
+> 才会识别这个新协议。脚本会自动检测这一情况，并在结束时给出 **15 秒**倒计时重启提示：
+> 什么都不按，路由器会自动重启，重启后接口会自动启动；若要取消，输入 `n` 并回车（之后
+> 自行手动执行 `reboot`）。再次运行时（协议已注册）不会触发重启 —— 隧道会立即启动。
 
 向导会逐步引导：
 - 询问**接口名称** —— 按服务器所在国家/位置起个易记的名字（`awg_nl`、`awg_de`、
@@ -93,7 +88,7 @@ sh setup-awg.sh                                     # 从 awg.env 启动
 | `-i`, `--wizard` | 强制运行交互式向导 |
 | `--from-conf FILE` | 从 `.conf` 生成 `awg.env` 后退出 |
 | `--no-install` | 跳过软件包安装，仅配置 |
-| `--reboot` | 当注册 proto 需要重启时自动重启路由器（= `AUTO_REBOOT=1`） |
+| `--reboot` | 静默模式：立即重启，跳过 15 秒倒计时（用于自动化；= `AUTO_REBOOT=1`） |
 | `--env PATH` | 使用指定路径的 env 文件 |
 | `-h`, `--help` | 帮助 |
 

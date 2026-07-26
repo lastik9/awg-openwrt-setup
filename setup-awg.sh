@@ -8,6 +8,7 @@
 #   sh setup-awg.sh --from-conf my.conf   # генерирует awg.env из .conf и выходит (проверь глазами!)
 #   sh setup-awg.sh --no-install          # только настройка, без установки пакетов
 #   sh setup-awg.sh --env /path/awg.env   # указать другой env-файл
+#   sh setup-awg.sh --reboot              # тихо перезагрузить при необходимости (без 15-сек отсчёта)
 #
 # Интерактивный мастер спросит имя интерфейса (напр. awg_nl), откроет редактор для
 # вставки .conf и создаст всё сам. Несколько серверов = несколько интерфейсов с
@@ -321,17 +322,42 @@ proto_now=$(ubus call network.interface."$IFACE" status 2>/dev/null \
 if [ "$proto_now" != "amneziawg" ]; then
   echo
   warn "netifd пока не знает proto 'amneziawg' (свежая установка пакетов)."
-  warn "Конфигурация записана корректно, но для её применения нужен ОДИН reboot."
+  warn "Конфигурация записана корректно — для её применения нужен ОДИН reboot."
+  echo
+
+  # Неинтерактивный режим (--reboot / запуск без терминала): без отсчёта.
   if [ "${AUTO_REBOOT:-0}" = 1 ]; then
-    warn "AUTO_REBOOT=1 — перезагружаю роутер через 3 секунды..."
-    sleep 3
+    log "AUTO_REBOOT — перезагружаю роутер..."
     reboot
     exit 0
   fi
-  warn "Выполни вручную:  reboot"
-  warn "После загрузки интерфейс $IFACE поднимется сам. Проверка:  awg show $IFACE"
+
+  # Обратный отсчёт: по таймауту (15с без ответа) — перезагружаем.
+  # Отмена — ввести n/н/no/нет и Enter. Пустой Enter = согласие (reboot).
+  ans=''
+  i=15
+  while [ "$i" -gt 0 ]; do
+    printf '\r\033[1;33m[!]\033[0m Перезагрузка через %2d сек. Отмена — клавиша [n], затем Enter: ' "$i"
+    if read -t 1 -r ans 2>/dev/null; then
+      break            # что-то ввели и нажали Enter — прекращаем отсчёт
+    fi
+    i=$((i - 1))
+  done
   echo
-  log "Дальше (после reboot): Services -> Podkop -> тип VPN, интерфейс $IFACE -> Save & Apply."
+
+  case "$ans" in
+    n|N|н|Н|no|NO|нет|НЕТ|Нет)
+      warn "Перезагрузка отменена."
+      warn "Применить конфигурацию позже вручную:  reboot"
+      warn "После загрузки интерфейс $IFACE поднимется сам. Проверка:  awg show $IFACE"
+      echo
+      log "Дальше (после reboot): Services -> Podkop -> тип VPN, интерфейс $IFACE -> Save & Apply."
+      ;;
+    *)
+      log "Перезагружаю роутер..."
+      reboot
+      ;;
+  esac
   exit 0
 fi
 
