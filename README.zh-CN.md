@@ -44,57 +44,49 @@
 
 以下命令在**路由器**上通过 SSH 执行。
 
-**1. 下载脚本和模板**（到 `/root`）：
+**1. 下载脚本**（到 `/root`）：
 
 ```sh
-cd /root && for f in setup-awg.sh awg.env.example; do curl -fsSLO "https://raw.githubusercontent.com/lastik9/awg-openwrt-setup/main/$f"; done
+cd /root && curl -fsSLO "https://raw.githubusercontent.com/lastik9/awg-openwrt-setup/main/setup-awg.sh"
 ```
 
-**2. 准备 `awg.env`** —— 任选其一：
-
-### 方式 A：已有现成的 `.conf`（推荐）
-
-这是服务商或 Amnezia 应用给出的纯文本配置，形如 `[Interface] … [Peer] …`。
-脚本会自动解析并提取全部参数 —— 无需手动填写。
-
-```sh
-# 2.1 将配置保存到路由器上的文件
-vi /root/my.conf
-#     按 i，粘贴整个配置，然后按 Esc 并输入 :wq
-
-# 2.2 从中生成 awg.env
-sh setup-awg.sh --from-conf /root/my.conf
-
-# 2.3 填入 keepalive（Amnezia 的 .conf 通常没有；位于 NAT 之后时必填）
-sed -i "s/^KEEPALIVE=.*/KEEPALIVE='25'/" /root/awg.env
-
-# 2.4（可选）核对关键字段
-grep -E "ENDPOINT_HOST|KEEPALIVE|MAKE_ZONE" /root/awg.env
-```
-
-### 方式 B：手动填写
-
-若没有现成的 `.conf`，复制模板并自行填入各值：
-
-```sh
-cp awg.env.example awg.env
-vi awg.env
-```
-
-**3. 执行安装与配置：**
+**2. 运行向导：**
 
 ```sh
 sh setup-awg.sh
 ```
 
-**4. 挂载到 podkop：** **LuCI → Services → Podkop**，连接类型选 **VPN**，
-网络接口选 `awg0` → Save & Apply。
+向导会逐步引导：
+- 询问**接口名称** —— 按服务器所在国家/位置起个易记的名字（`awg_nl`、`awg_de`、
+  `awg_us`），以免混淆。连字符会自动替换为下划线（`awg-nl` → `awg_nl`）；
+- 打开**编辑器** —— 把整个 `.conf` 粘贴进去（从 `[Interface]` 到 `[Peer]` 结尾），
+  保存并退出（在 `vi` 中：`Esc`，然后 `:wq`）；
+- 询问 **keepalive** —— 按回车使用 25（位于 NAT 之后时需要）。
+
+随后脚本会自动安装软件包、以所选名称创建接口、将其加入共享防火墙区域 `awg`，并启动隧道。
+
+**3. 挂载到 podkop：** **LuCI → Services → Podkop**，连接类型选 **VPN**，
+网络接口选你设定的名字（如 `awg_nl`）→ Save & Apply。
+
+### 备选：不使用向导
+
+如需非交互方式（自动化、脚本）—— 从 `.conf` 生成 `awg.env` 再运行：
+
+```sh
+curl -fsSLO "https://raw.githubusercontent.com/lastik9/awg-openwrt-setup/main/awg.env.example"
+sh setup-awg.sh --from-conf /root/my.conf          # 生成 awg.env
+sed -i "s/^KEEPALIVE=.*/KEEPALIVE='25'/" /root/awg.env
+sh setup-awg.sh                                     # 从 awg.env 启动
+```
+
+或从 `awg.env.example` 模板手动填写 `awg.env`。
 
 ## 命令行参数
 
 | 参数 | 作用 |
 |------|------|
-| （无） | 安装软件包 + 从 `awg.env` 配置 |
+| （无） | 无 `awg.env` 时运行向导；否则从 `awg.env` 配置 |
+| `-i`, `--wizard` | 强制运行交互式向导 |
 | `--from-conf FILE` | 从 `.conf` 生成 `awg.env` 后退出 |
 | `--no-install` | 跳过软件包安装，仅配置 |
 | `--env PATH` | 使用指定路径的 env 文件 |
@@ -110,28 +102,19 @@ sh setup-awg.sh
 
 ## 多个服务器
 
-一个接口 = 一个服务器。若要接第二个服务器，请新建**独立接口**（`awg1`、`awg2`……），
-配以各自的 env 文件和各自的区域。软件包已安装，故使用 `--no-install` 运行。
+一个接口 = 一个服务器。要添加另一个，只需**再次运行向导**并给接口起个不同的名字：
 
 ```sh
-# 1. 从第二个配置生成独立的 env（--env 指定输出路径）
-sh setup-awg.sh --from-conf /root/server2.conf --env /root/awg1.env
-
-# 2. 打开 awg1.env，修改三行：
-#      IFACE='awg1'         （唯一的接口名）
-#      ZONE_NAME='awg1'     （独立区域；或保留 'awg' 以共用一个）
-#      KEEPALIVE='25'
-vi /root/awg1.env
-
-# 3. 启动第二个接口（不要重装软件包）
-sh setup-awg.sh --env /root/awg1.env --no-install
+sh setup-awg.sh -i
+# 名称：awg_de，粘贴第二个 .conf —— 即可
 ```
 
-现在路由器上有两条独立隧道 —— `awg0` 和 `awg1`。在 podkop 中各自作为独立配置挂载：
-新增第二个配置并指向接口 `awg1`。哪些流量走哪个服务器，由 podkop 的列表决定。
+每个服务器拥有各自的接口（`awg_nl`、`awg_de`……），但它们都归入**同一个共享防火墙
+区域** `awg` —— 所有接口的防火墙行为（masq + MSS）一致，无需增设多个区域。脚本会自动
+把新接口加入现有区域。
 
-关于区域：可为每个接口分配各自的区域（`awg`、`awg1`）以便分别管理；或手动编辑
-`firewall.awg.network` 把两个接口放入同一区域。脚本默认按 `ZONE_NAME` 创建独立区域。
+在 podkop 中，每条隧道作为独立配置挂载：新增第二个配置并指向所需接口。哪些流量走哪个
+服务器，由 podkop 的列表决定。
 
 ## 关于 keepalive
 

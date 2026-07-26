@@ -48,58 +48,52 @@ in **Services → Podkop** yourself.
 
 Run these commands **on the router** over SSH.
 
-**1. Download the script and template** (into `/root`):
+**1. Download the script** (into `/root`):
 
 ```sh
-cd /root && for f in setup-awg.sh awg.env.example; do curl -fsSLO "https://raw.githubusercontent.com/lastik9/awg-openwrt-setup/main/$f"; done
+cd /root && curl -fsSLO "https://raw.githubusercontent.com/lastik9/awg-openwrt-setup/main/setup-awg.sh"
 ```
 
-**2. Prepare `awg.env`** — one of two ways:
-
-### Option A: you have a ready `.conf` (recommended)
-
-This is the plain-text config from your provider / the Amnezia app, shaped like
-`[Interface] … [Peer] …`. The script parses it and extracts every parameter for you —
-nothing to type by hand.
-
-```sh
-# 2.1 save the config to a file on the router
-vi /root/my.conf
-#     press i, paste the whole config, then Esc and :wq
-
-# 2.2 generate awg.env from it
-sh setup-awg.sh --from-conf /root/my.conf
-
-# 2.3 set keepalive (Amnezia .conf usually omits it; needed behind NAT)
-sed -i "s/^KEEPALIVE=.*/KEEPALIVE='25'/" /root/awg.env
-
-# 2.4 (optional) check the key fields
-grep -E "ENDPOINT_HOST|KEEPALIVE|MAKE_ZONE" /root/awg.env
-```
-
-### Option B: fill it manually
-
-If you don't have a ready `.conf`, copy the template and fill in the values:
-
-```sh
-cp awg.env.example awg.env
-vi awg.env
-```
-
-**3. Run install + setup:**
+**2. Run the wizard:**
 
 ```sh
 sh setup-awg.sh
 ```
 
-**4. Attach to podkop:** **LuCI → Services → Podkop**, connection type **VPN**,
-network interface `awg0` → Save & Apply.
+The wizard walks you through:
+- it asks for an **interface name** — pick a meaningful one per server country/location
+  (`awg_nl`, `awg_de`, `awg_us`) so you don't get confused. Dashes are replaced with
+  underscores automatically (`awg-nl` → `awg_nl`);
+- it opens an **editor** — paste your whole `.conf` there (from `[Interface]` to the
+  end of `[Peer]`), save and quit (in `vi`: `Esc`, then `:wq`);
+- it asks for **keepalive** — press Enter for 25 (needed behind NAT).
+
+Then the script installs the packages, creates the interface with your chosen name,
+adds it to the shared firewall zone `awg`, and brings the tunnel up.
+
+**3. Attach to podkop:** **LuCI → Services → Podkop**, connection type **VPN**,
+network interface (the name you chose, e.g. `awg_nl`) → Save & Apply.
+
+### Alternative: without the wizard
+
+For a non-interactive path (automation, scripts) — generate `awg.env` from a `.conf`
+and run:
+
+```sh
+curl -fsSLO "https://raw.githubusercontent.com/lastik9/awg-openwrt-setup/main/awg.env.example"
+sh setup-awg.sh --from-conf /root/my.conf          # creates awg.env
+sed -i "s/^KEEPALIVE=.*/KEEPALIVE='25'/" /root/awg.env
+sh setup-awg.sh                                     # brings it up from awg.env
+```
+
+Or fill `awg.env` manually from the `awg.env.example` template.
 
 ## Command-line options
 
 | Flag | Action |
 |------|--------|
-| (none) | install packages + configure from `awg.env` |
+| (none) | wizard if no `awg.env`; otherwise configure from `awg.env` |
+| `-i`, `--wizard` | force the interactive wizard |
 | `--from-conf FILE` | generate `awg.env` from a `.conf` and exit |
 | `--no-install` | skip package installation, configure only |
 | `--env PATH` | use an env file at a different path |
@@ -115,32 +109,22 @@ Extra options live in `awg.env`:
 
 ## Multiple servers
 
-One interface = one server. For a second server, create a **separate interface**
-(`awg1`, `awg2`, …) with its own env file and its own zone. Packages are already
-installed, so run with `--no-install`.
+One interface = one server. To add another, just **run the wizard again** and give the
+interface a different name:
 
 ```sh
-# 1. generate a separate env from the second config (--env sets the output path)
-sh setup-awg.sh --from-conf /root/server2.conf --env /root/awg1.env
-
-# 2. open awg1.env and edit three lines:
-#      IFACE='awg1'         (unique interface name)
-#      ZONE_NAME='awg1'     (own zone; or keep 'awg' to share one)
-#      KEEPALIVE='25'
-vi /root/awg1.env
-
-# 3. bring the second interface up (do not reinstall packages)
-sh setup-awg.sh --env /root/awg1.env --no-install
+sh setup-awg.sh -i
+# name: awg_de, paste the second .conf — that's it
 ```
 
-Now the router has two independent tunnels — `awg0` and `awg1`. In podkop each is
-attached as a separate configuration: add a second profile and point it at interface
-`awg1`. Which traffic goes through which server is decided by podkop's lists.
+Each server gets its own interface (`awg_nl`, `awg_de`, …), but they all go into
+**one shared firewall zone** `awg` — the firewall behaviour (masq + MSS) is identical
+for all, no need to multiply zones. The script adds each new interface to the existing
+zone automatically.
 
-A note on zones: you can give each interface its own zone (`awg`, `awg1`) for easier
-separate management, or put both interfaces into one zone by editing
-`firewall.awg.network` manually. By default the script creates a separate zone per
-`ZONE_NAME`.
+In podkop each tunnel is attached as a separate configuration: add a second profile and
+point it at the interface you want. Which traffic goes through which server is decided
+by podkop's lists.
 
 ## Note on keepalive
 
