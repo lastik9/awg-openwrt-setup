@@ -37,7 +37,9 @@ done
 # ---------- режим генерации env из .conf ----------
 if [ -n "$FROM_CONF" ]; then
   [ -r "$FROM_CONF" ] || die "Не читается файл: $FROM_CONF"
-  OUT="$SCRIPT_DIR/awg.env"
+  # пишем в ENV_FILE (учитывает --env). Для второго сервера:
+  #   sh setup-awg.sh --from-conf s2.conf --env /root/awg1.env
+  OUT="$ENV_FILE"
   [ -e "$OUT" ] && { warn "$OUT уже есть — пишу в $OUT.new"; OUT="$OUT.new"; }
 
   # достаём значение по ключу из блока [Interface] или [Peer]

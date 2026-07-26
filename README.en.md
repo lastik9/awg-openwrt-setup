@@ -56,12 +56,32 @@ cd /root && for f in setup-awg.sh awg.env.example; do curl -fsSLO "https://raw.g
 
 **2. Prepare `awg.env`** — one of two ways:
 
-```sh
-# option A: you have a provider .conf — generate the env from it
-sh setup-awg.sh --from-conf /root/my.conf
-# then open awg.env, set KEEPALIVE='25' (if empty) and review the values
+### Option A: you have a ready `.conf` (recommended)
 
-# option B: fill the env manually
+This is the plain-text config from your provider / the Amnezia app, shaped like
+`[Interface] … [Peer] …`. The script parses it and extracts every parameter for you —
+nothing to type by hand.
+
+```sh
+# 2.1 save the config to a file on the router
+vi /root/my.conf
+#     press i, paste the whole config, then Esc and :wq
+
+# 2.2 generate awg.env from it
+sh setup-awg.sh --from-conf /root/my.conf
+
+# 2.3 set keepalive (Amnezia .conf usually omits it; needed behind NAT)
+sed -i "s/^KEEPALIVE=.*/KEEPALIVE='25'/" /root/awg.env
+
+# 2.4 (optional) check the key fields
+grep -E "ENDPOINT_HOST|KEEPALIVE|MAKE_ZONE" /root/awg.env
+```
+
+### Option B: fill it manually
+
+If you don't have a ready `.conf`, copy the template and fill in the values:
+
+```sh
 cp awg.env.example awg.env
 vi awg.env
 ```
@@ -92,6 +112,35 @@ Extra options live in `awg.env`:
 | `MAKE_ZONE='1'` | create the `awg` firewall zone (0 — leave firewall alone) |
 | `KEEPALIVE='25'` | persistent keepalive; required behind NAT |
 | `INSTALL_RU_LANG='1'` | install the Russian LuCI locale for AmneziaWG |
+
+## Multiple servers
+
+One interface = one server. For a second server, create a **separate interface**
+(`awg1`, `awg2`, …) with its own env file and its own zone. Packages are already
+installed, so run with `--no-install`.
+
+```sh
+# 1. generate a separate env from the second config (--env sets the output path)
+sh setup-awg.sh --from-conf /root/server2.conf --env /root/awg1.env
+
+# 2. open awg1.env and edit three lines:
+#      IFACE='awg1'         (unique interface name)
+#      ZONE_NAME='awg1'     (own zone; or keep 'awg' to share one)
+#      KEEPALIVE='25'
+vi /root/awg1.env
+
+# 3. bring the second interface up (do not reinstall packages)
+sh setup-awg.sh --env /root/awg1.env --no-install
+```
+
+Now the router has two independent tunnels — `awg0` and `awg1`. In podkop each is
+attached as a separate configuration: add a second profile and point it at interface
+`awg1`. Which traffic goes through which server is decided by podkop's lists.
+
+A note on zones: you can give each interface its own zone (`awg`, `awg1`) for easier
+separate management, or put both interfaces into one zone by editing
+`firewall.awg.network` manually. By default the script creates a separate zone per
+`ZONE_NAME`.
 
 ## Note on keepalive
 

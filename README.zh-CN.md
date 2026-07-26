@@ -52,12 +52,31 @@ cd /root && for f in setup-awg.sh awg.env.example; do curl -fsSLO "https://raw.g
 
 **2. 准备 `awg.env`** —— 任选其一：
 
-```sh
-# 方式 A：已有服务商的 .conf —— 从中生成 env
-sh setup-awg.sh --from-conf /root/my.conf
-# 然后打开 awg.env，若 KEEPALIVE 为空则填入 '25'，并核对各项值
+### 方式 A：已有现成的 `.conf`（推荐）
 
-# 方式 B：手动填写 env
+这是服务商或 Amnezia 应用给出的纯文本配置，形如 `[Interface] … [Peer] …`。
+脚本会自动解析并提取全部参数 —— 无需手动填写。
+
+```sh
+# 2.1 将配置保存到路由器上的文件
+vi /root/my.conf
+#     按 i，粘贴整个配置，然后按 Esc 并输入 :wq
+
+# 2.2 从中生成 awg.env
+sh setup-awg.sh --from-conf /root/my.conf
+
+# 2.3 填入 keepalive（Amnezia 的 .conf 通常没有；位于 NAT 之后时必填）
+sed -i "s/^KEEPALIVE=.*/KEEPALIVE='25'/" /root/awg.env
+
+# 2.4（可选）核对关键字段
+grep -E "ENDPOINT_HOST|KEEPALIVE|MAKE_ZONE" /root/awg.env
+```
+
+### 方式 B：手动填写
+
+若没有现成的 `.conf`，复制模板并自行填入各值：
+
+```sh
 cp awg.env.example awg.env
 vi awg.env
 ```
@@ -88,6 +107,31 @@ sh setup-awg.sh
 | `MAKE_ZONE='1'` | 创建 `awg` 防火墙区域（0 —— 不改动防火墙） |
 | `KEEPALIVE='25'` | persistent keepalive；位于 NAT 之后时必填 |
 | `INSTALL_RU_LANG='1'` | 安装 AmneziaWG 的 LuCI 俄语语言包 |
+
+## 多个服务器
+
+一个接口 = 一个服务器。若要接第二个服务器，请新建**独立接口**（`awg1`、`awg2`……），
+配以各自的 env 文件和各自的区域。软件包已安装，故使用 `--no-install` 运行。
+
+```sh
+# 1. 从第二个配置生成独立的 env（--env 指定输出路径）
+sh setup-awg.sh --from-conf /root/server2.conf --env /root/awg1.env
+
+# 2. 打开 awg1.env，修改三行：
+#      IFACE='awg1'         （唯一的接口名）
+#      ZONE_NAME='awg1'     （独立区域；或保留 'awg' 以共用一个）
+#      KEEPALIVE='25'
+vi /root/awg1.env
+
+# 3. 启动第二个接口（不要重装软件包）
+sh setup-awg.sh --env /root/awg1.env --no-install
+```
+
+现在路由器上有两条独立隧道 —— `awg0` 和 `awg1`。在 podkop 中各自作为独立配置挂载：
+新增第二个配置并指向接口 `awg1`。哪些流量走哪个服务器，由 podkop 的列表决定。
+
+关于区域：可为每个接口分配各自的区域（`awg`、`awg1`）以便分别管理；或手动编辑
+`firewall.awg.network` 把两个接口放入同一区域。脚本默认按 `ZONE_NAME` 创建独立区域。
 
 ## 关于 keepalive
 
