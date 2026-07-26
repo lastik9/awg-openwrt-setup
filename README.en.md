@@ -142,10 +142,13 @@ wget https://raw.githubusercontent.com/lastik9/awg-openwrt-setup/main/uninstall-
 sh uninstall-awg.sh
 ```
 
-The script removes the interface and the firewall zone, then **asks separately**
-whether to remove the AmneziaWG system packages. Those packages
-(`kmod-amneziawg`, `amneziawg-tools`, `luci-proto-amneziawg`) are **shared**: if you
-run other AWG tunnels on the router, keep them. Podkop is left untouched.
+The script finds **all** interfaces with `proto=amneziawg` (the wizard creates
+arbitrary names in the shared zone), lists them, and — once confirmed — removes them
+along with their peer sections and the firewall zone. To remove just one interface,
+pass `--iface awg_nl`. At the end it **asks separately** whether to remove the
+AmneziaWG system packages. Those packages (`kmod-amneziawg`, `amneziawg-tools`,
+`luci-proto-amneziawg`) are **shared**: if you run other AWG tunnels on the router,
+keep them. Podkop is left untouched.
 
 ## Security
 

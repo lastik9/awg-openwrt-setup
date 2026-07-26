@@ -129,7 +129,9 @@ wget https://raw.githubusercontent.com/lastik9/awg-openwrt-setup/main/uninstall-
 sh uninstall-awg.sh
 ```
 
-脚本会删除接口和防火墙区域，最后**单独询问**是否卸载 AmneziaWG 系统软件包。
+脚本会查找**所有** `proto=amneziawg` 的接口（向导会在共享区域中创建任意名称），
+列出后经确认将它们连同 peer 段和防火墙区域一并删除。若只想删除某一个接口，
+使用 `--iface awg_nl`。最后会**单独询问**是否卸载 AmneziaWG 系统软件包。
 这些软件包（`kmod-amneziawg`、`amneziawg-tools`、`luci-proto-amneziawg`）是**共享**的：
 若路由器上还有其他 AWG 隧道，建议保留。podkop 不受影响。
 
