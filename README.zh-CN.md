@@ -44,13 +44,13 @@
 
 以下命令在**路由器**上通过 SSH 执行。
 
-用一条命令下载脚本和模板（到 `/root`）：
+**1. 下载脚本和模板**（到 `/root`）：
 
 ```sh
 cd /root && for f in setup-awg.sh awg.env.example; do curl -fsSLO "https://raw.githubusercontent.com/lastik9/awg-openwrt-setup/main/$f"; done
 ```
 
-然后任选其一：
+**2. 准备 `awg.env`** —— 任选其一：
 
 ```sh
 # 方式 A：已有服务商的 .conf —— 从中生成 env
@@ -60,13 +60,16 @@ sh setup-awg.sh --from-conf /root/my.conf
 # 方式 B：手动填写 env
 cp awg.env.example awg.env
 vi awg.env
+```
 
-# 执行安装与配置
+**3. 执行安装与配置：**
+
+```sh
 sh setup-awg.sh
 ```
 
-安装完成后：**LuCI → Services → Podkop**，连接类型选 **VPN**，网络接口选 `awg0`
-→ Save & Apply。
+**4. 挂载到 podkop：** **LuCI → Services → Podkop**，连接类型选 **VPN**，
+网络接口选 `awg0` → Save & Apply。
 
 ## 命令行参数
 

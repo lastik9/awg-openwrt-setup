@@ -47,13 +47,13 @@ Podkop скрипт **не настраивает** — после устано�
 
 Команды выполняются **на роутере** по SSH.
 
-Скачай скрипт и шаблон одной командой (в `/root`):
+**1. Скачай скрипт и шаблон** (в `/root`):
 
 ```sh
 cd /root && for f in setup-awg.sh awg.env.example; do curl -fsSLO "https://raw.githubusercontent.com/lastik9/awg-openwrt-setup/main/$f"; done
 ```
 
-Дальше выбери один из вариантов:
+**2. Подготовь `awg.env`** — одним из способов:
 
 ```sh
 # вариант A: есть готовый .conf от провайдера — сгенерируй env из него
@@ -63,13 +63,16 @@ sh setup-awg.sh --from-conf /root/my.conf
 # вариант B: заполни env вручную
 cp awg.env.example awg.env
 vi awg.env
+```
 
-# запусти установку и настройку
+**3. Запусти установку и настройку:**
+
+```sh
 sh setup-awg.sh
 ```
 
-После установки: **LuCI → Services → Podkop**, тип подключения **VPN**, сетевой
-интерфейс `awg0` → Save & Apply.
+**4. Подключи к podkop:** **LuCI → Services → Podkop**, тип подключения **VPN**,
+сетевой интерфейс `awg0` → Save & Apply.
 
 ## Параметры запуска
 

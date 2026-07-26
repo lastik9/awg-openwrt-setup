@@ -48,13 +48,13 @@ in **Services → Podkop** yourself.
 
 Run these commands **on the router** over SSH.
 
-Download the script and template in one command (into `/root`):
+**1. Download the script and template** (into `/root`):
 
 ```sh
 cd /root && for f in setup-awg.sh awg.env.example; do curl -fsSLO "https://raw.githubusercontent.com/lastik9/awg-openwrt-setup/main/$f"; done
 ```
 
-Then pick one of the options:
+**2. Prepare `awg.env`** — one of two ways:
 
 ```sh
 # option A: you have a provider .conf — generate the env from it
@@ -64,13 +64,16 @@ sh setup-awg.sh --from-conf /root/my.conf
 # option B: fill the env manually
 cp awg.env.example awg.env
 vi awg.env
+```
 
-# run install + setup
+**3. Run install + setup:**
+
+```sh
 sh setup-awg.sh
 ```
 
-After installation: **LuCI → Services → Podkop**, connection type **VPN**, network
-interface `awg0` → Save & Apply.
+**4. Attach to podkop:** **LuCI → Services → Podkop**, connection type **VPN**,
+network interface `awg0` → Save & Apply.
 
 ## Command-line options
 
