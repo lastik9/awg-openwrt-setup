@@ -47,14 +47,18 @@ Podkop скрипт **не настраивает** — после устано�
 
 Команды выполняются **на роутере** по SSH.
 
-```sh
-# скопируй файлы на роутер (например в /root) или скачай по одному:
-wget https://raw.githubusercontent.com/lastik9/awg-openwrt-setup/main/setup-awg.sh
-wget https://raw.githubusercontent.com/lastik9/awg-openwrt-setup/main/awg.env.example
+Скачай скрипт и шаблон одной командой (в `/root`):
 
+```sh
+cd /root && for f in setup-awg.sh awg.env.example; do curl -fsSLO "https://raw.githubusercontent.com/lastik9/awg-openwrt-setup/main/$f"; done
+```
+
+Дальше выбери один из вариантов:
+
+```sh
 # вариант A: есть готовый .conf от провайдера — сгенерируй env из него
 sh setup-awg.sh --from-conf /root/my.conf
-# затем открой awg.env, впиши KEEPALIVE='25' и проверь значения
+# затем открой awg.env, впиши KEEPALIVE='25' (если пусто) и проверь значения
 
 # вариант B: заполни env вручную
 cp awg.env.example awg.env
@@ -76,6 +80,14 @@ sh setup-awg.sh
 | `--no-install` | пропустить установку пакетов, только настройка |
 | `--env PATH` | использовать env-файл по другому пути |
 | `-h`, `--help` | справка |
+
+Дополнительные опции задаются в `awg.env`:
+
+| Переменная | Действие |
+|------------|----------|
+| `MAKE_ZONE='1'` | создать firewall-зону `awg` (0 — не трогать фаервол) |
+| `KEEPALIVE='25'` | persistent keepalive; за NAT обязателен |
+| `INSTALL_RU_LANG='1'` | поставить русскую локаль LuCI для AmneziaWG |
 
 ## Важно про keepalive
 

@@ -44,14 +44,18 @@
 
 以下命令在**路由器**上通过 SSH 执行。
 
-```sh
-# 将文件复制到路由器（例如 /root），或逐个下载：
-wget https://raw.githubusercontent.com/lastik9/awg-openwrt-setup/main/setup-awg.sh
-wget https://raw.githubusercontent.com/lastik9/awg-openwrt-setup/main/awg.env.example
+用一条命令下载脚本和模板（到 `/root`）：
 
+```sh
+cd /root && for f in setup-awg.sh awg.env.example; do curl -fsSLO "https://raw.githubusercontent.com/lastik9/awg-openwrt-setup/main/$f"; done
+```
+
+然后任选其一：
+
+```sh
 # 方式 A：已有服务商的 .conf —— 从中生成 env
 sh setup-awg.sh --from-conf /root/my.conf
-# 然后打开 awg.env，填入 KEEPALIVE='25' 并核对各项值
+# 然后打开 awg.env，若 KEEPALIVE 为空则填入 '25'，并核对各项值
 
 # 方式 B：手动填写 env
 cp awg.env.example awg.env
@@ -73,6 +77,14 @@ sh setup-awg.sh
 | `--no-install` | 跳过软件包安装，仅配置 |
 | `--env PATH` | 使用指定路径的 env 文件 |
 | `-h`, `--help` | 帮助 |
+
+其他选项在 `awg.env` 中设置：
+
+| 变量 | 作用 |
+|------|------|
+| `MAKE_ZONE='1'` | 创建 `awg` 防火墙区域（0 —— 不改动防火墙） |
+| `KEEPALIVE='25'` | persistent keepalive；位于 NAT 之后时必填 |
+| `INSTALL_RU_LANG='1'` | 安装 AmneziaWG 的 LuCI 俄语语言包 |
 
 ## 关于 keepalive
 

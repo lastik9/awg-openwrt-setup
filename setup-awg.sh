@@ -62,9 +62,11 @@ if [ -n "$FROM_CONF" ]; then
     echo "ADDRESSES='$addr'"
     echo "DNS='$dns'"
     echo "MTU='${mtu:-1280}'"
-    for k in Jc Jmin Jmax S1 S2 S3 S4 H1 H2 H3 H4; do
-      up=$(echo "$k" | tr '[:lower:]' '[:upper:]')
-      echo "$up='$(get "$k")'"
+    # busybox tr не понимает [:lower:], поэтому пары "ключ_в_conf:ИМЯ_В_ENV" явно
+    for pair in Jc:JC Jmin:JMIN Jmax:JMAX \
+                S1:S1 S2:S2 S3:S3 S4:S4 H1:H1 H2:H2 H3:H3 H4:H4; do
+      ck=${pair%:*}; ek=${pair#*:}
+      echo "$ek='$(get "$ck")'"
     done
     echo "I1='$(geti1)'"
     echo "PEER_PUBLIC_KEY='$(get PublicKey)'"
@@ -77,7 +79,11 @@ if [ -n "$FROM_CONF" ]; then
     echo "ZONE_NAME='awg'"
   } > "$OUT"
   log "Записан $OUT"
-  warn "ВАЖНО: открой $OUT и проверь значения (особенно I1, ADDRESSES, KEEPALIVE) перед запуском."
+  warn "ВАЖНО: открой $OUT и проверь значения (особенно I1 и ADDRESSES) перед запуском."
+  if ! grep -qE "^KEEPALIVE='[0-9]+'" "$OUT"; then
+    warn "KEEPALIVE пуст (в .conf нет PersistentKeepalive). За NAT впиши KEEPALIVE='25':"
+    warn "  sed -i \"s/^KEEPALIVE=.*/KEEPALIVE='25'/\" $OUT"
+  fi
   exit 0
 fi
 
@@ -115,6 +121,16 @@ fi
 
 command -v awg >/dev/null || die "awg не найден после установки — настройку прервал."
 
+# ---------- русская локаль LuCI (опция) ----------
+if [ "${INSTALL_RU_LANG:-0}" = 1 ] && [ "$DO_INSTALL" = 1 ]; then
+  log "Ставлю русскую локаль luci-i18n-amneziawg-ru..."
+  if command -v apk >/dev/null 2>&1; then
+    apk add luci-i18n-amneziawg-ru 2>/dev/null || warn "Не удалось поставить локаль (не критично)."
+  elif command -v opkg >/dev/null 2>&1; then
+    opkg update >/dev/null 2>&1; opkg install luci-i18n-amneziawg-ru 2>/dev/null || warn "Не удалось поставить локаль (не критично)."
+  fi
+fi
+
 # ---------- проверка: интерфейс уже есть? ----------
 if uci -q get "network.$IFACE" >/dev/null; then
   warn "Секция network.$IFACE уже существует — НЕ трогаю её (режим 'создать только если нет')."
@@ -131,6 +147,8 @@ if [ "$SKIP_IFACE" = 0 ]; then
   uci set "network.$IFACE.proto=amneziawg"
   uci set "network.$IFACE.private_key=$PRIVATE_KEY"
   [ -n "${MTU:-}" ] && uci set "network.$IFACE.mtu=$MTU"
+  # ВАЖНО для podkop: не создаём default route, иначе весь трафик уйдёт в туннель
+  uci set "network.$IFACE.defaultroute=0"
 
   # адреса (может быть несколько через запятую)
   uci -q delete "network.$IFACE.addresses"
@@ -150,10 +168,12 @@ if [ "$SKIP_IFACE" = 0 ]; then
     IFS=$OLDIFS
   fi
 
-  # obfuscation-параметры — задаём только непустые
-  for pair in "awg_jc:$JC" "awg_jmin:$JMIN" "awg_jmax:$JMAX" \
-              "awg_s1:$S1" "awg_s2:$S2" "awg_s3:$S3" "awg_s4:$S4" \
-              "awg_h1:$H1" "awg_h2:$H2" "awg_h3:$H3" "awg_h4:$H4" "awg_i1:$I1"; do
+  # obfuscation-параметры — задаём только непустые.
+  # ${VAR:-} чтобы set -u не ронял скрипт на отсутствующей переменной.
+  for pair in "awg_jc:${JC:-}" "awg_jmin:${JMIN:-}" "awg_jmax:${JMAX:-}" \
+              "awg_s1:${S1:-}" "awg_s2:${S2:-}" "awg_s3:${S3:-}" "awg_s4:${S4:-}" \
+              "awg_h1:${H1:-}" "awg_h2:${H2:-}" "awg_h3:${H3:-}" "awg_h4:${H4:-}" \
+              "awg_i1:${I1:-}"; do
     key=${pair%%:*}; val=${pair#*:}
     [ -n "$val" ] && uci set "network.$IFACE.$key=$val"
   done

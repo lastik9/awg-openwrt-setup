@@ -48,14 +48,18 @@ in **Services → Podkop** yourself.
 
 Run these commands **on the router** over SSH.
 
-```sh
-# copy the files to the router (e.g. into /root) or fetch them one by one:
-wget https://raw.githubusercontent.com/lastik9/awg-openwrt-setup/main/setup-awg.sh
-wget https://raw.githubusercontent.com/lastik9/awg-openwrt-setup/main/awg.env.example
+Download the script and template in one command (into `/root`):
 
+```sh
+cd /root && for f in setup-awg.sh awg.env.example; do curl -fsSLO "https://raw.githubusercontent.com/lastik9/awg-openwrt-setup/main/$f"; done
+```
+
+Then pick one of the options:
+
+```sh
 # option A: you have a provider .conf — generate the env from it
 sh setup-awg.sh --from-conf /root/my.conf
-# then open awg.env, set KEEPALIVE='25' and review the values
+# then open awg.env, set KEEPALIVE='25' (if empty) and review the values
 
 # option B: fill the env manually
 cp awg.env.example awg.env
@@ -77,6 +81,14 @@ interface `awg0` → Save & Apply.
 | `--no-install` | skip package installation, configure only |
 | `--env PATH` | use an env file at a different path |
 | `-h`, `--help` | help |
+
+Extra options live in `awg.env`:
+
+| Variable | Action |
+|----------|--------|
+| `MAKE_ZONE='1'` | create the `awg` firewall zone (0 — leave firewall alone) |
+| `KEEPALIVE='25'` | persistent keepalive; required behind NAT |
+| `INSTALL_RU_LANG='1'` | install the Russian LuCI locale for AmneziaWG |
 
 ## Note on keepalive
 
