@@ -20,6 +20,7 @@ set -u
 SCRIPT_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd || echo .)"
 ENV_FILE="$SCRIPT_DIR/awg.env"
 DO_INSTALL=1
+AUTO_REBOOT=0
 WIZARD=0
 SHARED_ZONE='awg'   # общая зона для всех awg-интерфейсов
 INSTALLER_URL='https://raw.githubusercontent.com/Slava-Shchipunov/awg-openwrt/refs/heads/master/amneziawg-install.sh'
@@ -37,6 +38,7 @@ while [ $# -gt 0 ]; do
     --from-conf) FROM_CONF="${2:-}"; shift 2 || die "--from-conf требует путь к .conf" ;;
     -i|--wizard) WIZARD=1; shift ;;
     --no-install) DO_INSTALL=0; shift ;;
+    --reboot) AUTO_REBOOT=1; shift ;;
     --env) ENV_FILE="${2:-}"; shift 2 || die "--env требует путь" ;;
     -h|--help) grep '^#' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) die "Неизвестный аргумент: $1" ;;
@@ -317,12 +319,40 @@ fi
 
 # ---------- поднять интерфейс ----------
 log "Поднимаю интерфейс $IFACE..."
-# netifd должен перечитать конфиг, иначе свежесозданный интерфейс ещё "не виден"
-# и ifup проходит вхолостую (до ребута интерфейс не поднимается).
-reload_config 2>/dev/null || /etc/init.d/network reload 2>/dev/null
-sleep 2
+# netifd регистрирует proto-хендлеры только при старте своего процесса.
+# При свежей установке пакетов /lib/netifd/proto/amneziawg.sh появляется уже
+# ПОСЛЕ старта netifd, поэтому proto ещё не зарегистрирован — и ни reload_config,
+# ни "/etc/init.d/network restart" его не подхватывают. Помогает только reboot,
+# при котором netifd сканирует /lib/netifd/proto заново. На уже "прогретом"
+# роутере (proto зарегистрирован) reboot не нужен — интерфейс встаёт сразу.
+reload_config 2>/dev/null
+sleep 1
 ifup "$IFACE" 2>/dev/null
-sleep 6
+sleep 3
+
+# Проверяем, что РЕАЛЬНО произошло: если netifd не знает proto amneziawg,
+# он подставляет заглушку "none". Это честнее, чем гадать "ставились ли пакеты".
+proto_now=$(ubus call network.interface."$IFACE" status 2>/dev/null \
+            | sed -n 's/.*"proto": *"\([^"]*\)".*/\1/p')
+
+if [ "$proto_now" != "amneziawg" ]; then
+  echo
+  warn "netifd пока не знает proto 'amneziawg' (свежая установка пакетов)."
+  warn "Конфигурация записана корректно, но для её применения нужен ОДИН reboot."
+  if [ "${AUTO_REBOOT:-0}" = 1 ]; then
+    warn "AUTO_REBOOT=1 — перезагружаю роутер через 3 секунды..."
+    sleep 3
+    reboot
+    exit 0
+  fi
+  warn "Выполни вручную:  reboot"
+  warn "После загрузки интерфейс $IFACE поднимется сам. Проверка:  awg show $IFACE"
+  echo
+  log "Дальше (после reboot): Services -> Podkop -> тип VPN, интерфейс $IFACE -> Save & Apply."
+  exit 0
+fi
+
+log "netifd знает proto — интерфейс поднят без перезагрузки."
 
 # ---------- проверка ----------
 echo
@@ -332,9 +362,14 @@ awg show "$IFACE" 2>/dev/null | grep -iE 'interface|endpoint|handshake|transfer|
 
 if awg show "$IFACE" 2>/dev/null | grep -qi 'latest handshake'; then
   log "УСПЕХ: handshake есть, туннель работает."
+elif [ -n "${KEEPALIVE:-}" ] && [ "${KEEPALIVE:-0}" != 0 ]; then
+  warn "Handshake пока нет — при keepalive=$KEEPALIVE появится в течение ~${KEEPALIVE}с."
+  warn "Подожди и повтори:  awg show $IFACE"
 else
-  warn "Handshake пока нет. Проверь: date, ip route get $ENDPOINT_HOST, logread | grep -i amnezia"
-  warn "Если keepalive=25, handshake обычно появляется в течение ~25с — подожди и запусти: awg show $IFACE"
+  # keepalive=0 и маршрутов в туннель нет (route_allowed_ips=0 для podkop):
+  # это НОРМА. Handshake появится, когда podkop направит трафик в туннель.
+  log "Интерфейс поднят. Handshake появится, когда в туннель пойдёт трафик"
+  log "(через podkop, либо задай PersistentKeepalive>0 в конфиге)."
 fi
 
 echo
