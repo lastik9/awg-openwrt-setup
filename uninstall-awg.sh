@@ -1,20 +1,21 @@
 #!/bin/sh
 # uninstall-awg.sh — удаляет то, что настроил setup-awg.sh на OpenWrt:
-# сетевой интерфейс AmneziaWG, его peer-секции и firewall-зону.
+# сетевые интерфейсы AmneziaWG, их peer-секции и firewall-зону.
 # Podkop НЕ трогается. Пакеты AWG удаляются отдельно, по подтверждению.
 #
 # Использование:
-#   sh uninstall-awg.sh                 # интерфейс awg0 и зона awg
-#   sh uninstall-awg.sh --iface awgX    # другое имя интерфейса
+#   sh uninstall-awg.sh                 # найти ВСЕ интерфейсы proto=amneziawg + зона awg
+#   sh uninstall-awg.sh --iface awgX    # удалить только один интерфейс по имени
 #   sh uninstall-awg.sh --zone myzone   # другое имя зоны
 #   sh uninstall-awg.sh --yes           # не задавать вопросов (кроме удаления пакетов)
 #
-# Обычный запуск убирает ТОЛЬКО конфигурацию (интерфейс + зона).
+# По умолчанию удаляются ВСЕ amneziawg-интерфейсы (мастер создаёт произвольные
+# имена в общей зоне). Указав --iface, удалишь только его.
 # Удаление системных пакетов AWG предлагается отдельно в конце.
 
 set -u
 
-IFACE='awg0'
+IFACE=''          # пусто = автообнаружение всех proto=amneziawg
 ZONE='awg'
 ASSUME_YES=0
 
@@ -44,47 +45,76 @@ ask() {
   case "$a" in y|Y|yes|YES|да) return 0 ;; *) return 1 ;; esac
 }
 
-# ---------- 1. интерфейс и peer-секции ----------
-if uci -q get "network.$IFACE" >/dev/null; then
-  if ask "Удалить сетевой интерфейс '$IFACE' и его peer-секции?"; then
-    log "Опускаю интерфейс $IFACE..."
-    ifdown "$IFACE" 2>/dev/null || true
+# remove_iface NAME — опустить интерфейс, снести его peer-секции и саму секцию
+remove_iface() {
+  _if="$1"
+  log "Опускаю интерфейс $_if..."
+  ifdown "$_if" 2>/dev/null || true
 
-    # удаляем все peer-секции типа amneziawg_<iface>
-    # (перебираем с конца, чтобы индексы не съезжали)
-    stype="amneziawg_$IFACE"
-    # соберём имена секций данного типа
-    peers=$(uci show network 2>/dev/null | sed -n "s/^network\.\(@$stype\[[0-9]*\]\)=.*/\1/p")
-    # @-нотация не всегда доступна для delete по индексу — используем именованный проход
-    i=0
-    while uci -q get "network.@$stype[0]" >/dev/null; do
-      uci delete "network.@$stype[0]" || break
-      i=$((i+1))
-      [ "$i" -gt 50 ] && break   # предохранитель
-    done
-    [ "$i" -gt 0 ] && log "Удалено peer-секций: $i"
+  # удаляем все peer-секции типа amneziawg_<iface> (с конца, чтобы индексы не съезжали)
+  _stype="amneziawg_$_if"
+  _i=0
+  while uci -q get "network.@$_stype[0]" >/dev/null; do
+    uci delete "network.@$_stype[0]" || break
+    _i=$((_i+1))
+    [ "$_i" -gt 50 ] && break   # предохранитель
+  done
+  [ "$_i" -gt 0 ] && log "  peer-секций удалено: $_i"
 
-    uci -q delete "network.$IFACE"
-    uci commit network
-    log "Интерфейс $IFACE удалён."
+  uci -q delete "network.$_if"
+  log "Интерфейс $_if удалён."
+}
+
+# ---------- 1. интерфейс(ы) ----------
+if [ -n "$IFACE" ]; then
+  # явно указан один интерфейс
+  if uci -q get "network.$IFACE" >/dev/null; then
+    if ask "Удалить сетевой интерфейс '$IFACE' и его peer-секции?"; then
+      remove_iface "$IFACE"
+      uci commit network
+    else
+      warn "Интерфейс $IFACE оставлен."
+    fi
   else
-    warn "Интерфейс $IFACE оставлен."
+    warn "Интерфейс network.$IFACE не найден — пропускаю."
   fi
 else
-  warn "Интерфейс network.$IFACE не найден — пропускаю."
+  # автообнаружение: все секции interface с proto=amneziawg
+  ifaces=$(uci show network 2>/dev/null \
+           | sed -n "s/^network\.\([^.]*\)\.proto='amneziawg'\$/\1/p")
+  if [ -z "$ifaces" ]; then
+    warn "Интерфейсы proto=amneziawg не найдены — пропускаю."
+  else
+    n=$(printf '%s\n' "$ifaces" | grep -c .)
+    warn "Найдено amneziawg-интерфейсов: $n"
+    printf '%s\n' "$ifaces" | sed 's/^/    - /'
+    if ask "Удалить ВСЕ перечисленные интерфейсы и их peer-секции?"; then
+      for _if in $ifaces; do
+        remove_iface "$_if"
+      done
+      uci commit network
+    else
+      warn "Интерфейсы оставлены."
+    fi
+  fi
 fi
 
 # ---------- 2. firewall-зона ----------
-if uci -q get "firewall.$ZONE" >/dev/null; then
+if uci -q get "firewall.$ZONE" >/dev/null 2>&1 || \
+   uci show firewall 2>/dev/null | grep -q "\.name='$ZONE'\$"; then
   if ask "Удалить firewall-зону '$ZONE'?"; then
-    uci -q delete "firewall.$ZONE"
-    # подчистим возможные forwarding-секции, ссылающиеся на зону
-    i=0
-    while [ "$i" -lt 50 ]; do
-      sec=$(uci show firewall 2>/dev/null | sed -n "s/^firewall\.\(@forwarding\[[0-9]*\]\)\.\(src\|dest\)='$ZONE'/\1/p" | head -n1)
+    # зона может быть именованной секцией или анонимной @zone[N] с name='awg'
+    uci -q delete "firewall.$ZONE" 2>/dev/null
+    while :; do
+      z=$(uci show firewall 2>/dev/null | sed -n "s/^firewall\.\(@zone\[[0-9]*\]\)\.name='$ZONE'\$/\1/p" | head -n1)
+      [ -z "$z" ] && break
+      uci -q delete "firewall.$z" || break
+    done
+    # подчистим forwarding-секции, ссылающиеся на зону
+    while :; do
+      sec=$(uci show firewall 2>/dev/null | sed -n "s/^firewall\.\(@forwarding\[[0-9]*\]\)\.\(src\|dest\)='$ZONE'\$/\1/p" | head -n1)
       [ -z "$sec" ] && break
       uci -q delete "firewall.$sec" || break
-      i=$((i+1))
     done
     uci commit firewall
     /etc/init.d/firewall reload >/dev/null 2>&1 || true
