@@ -135,9 +135,13 @@ sh uninstall-awg.sh
 这些软件包（`kmod-amneziawg`、`amneziawg-tools`、`luci-proto-amneziawg`）是**共享**的：
 若路由器上还有其他 AWG 隧道，建议保留。podkop 不受影响。
 
-> **请先在 podkop 中移除该接口。** 如果被删除的接口仍挂在 podkop/forkop 上，singbox
-> 会继续劫持 DNS 并把它转发到已失效的隧道：按 IP 能 ping 通，但域名无法解析（"断网"）。
-> 卸载前请在 **Services → Podkop → Save & Apply** 中移除该接口。
+> **关于 podkop 与 DNS。** 如果被删除的接口仍挂在 podkop/forkop 上，singbox 会继续劫持
+> DNS 并转发到已失效的隧道：按 IP 能 ping 通，但域名无法解析（"断网"）。最好先在
+> **Services → Podkop → Save & Apply** 中移除该接口。脚本**不会修改** podkop，但会协助：
+> - **删除前**读取 podkop/forkop 配置，若接口被引用，会指名并提醒；
+> - **删除后**若引用仍在，会提示停止 podkop/forkop 服务并重启 firewall+dnsmasq，
+>   以立即恢复上网（分流会暂时关闭，直到你修好 podkop）。重启无法解决此问题 ——
+>   自启后 DNS 会再次中断 —— 因此请从 podkop 中移除该接口。
 
 若删除后接口在 LuCI 中仍显示"待删除"（内核设备会一直保留，直到 netifd 重启 —— 尤其是
 AWG 软件包已被卸载时），脚本会检测到并提示 **带 15 秒倒计时的重启**（与安装时相同）。

@@ -49,15 +49,68 @@ ask() {
   case "$a" in y|Y|yes|YES|да) return 0 ;; *) return 1 ;; esac
 }
 
-# ---------- 0. предупреждение про podkop ----------
-# Если удаляемые интерфейсы ещё подключены в podkop/forkop, singbox продолжит
-# перехватывать DNS и слать его в мёртвый аутбаунд: пинг по IP будет жить, а
-# имена (интернет) перестанут резолвиться. Скрипт podkop не трогает — убрать
-# интерфейс оттуда должен сам пользователь.
-warn "ПЕРЕД удалением: если эти AWG-интерфейсы подключены в podkop/forkop —"
-warn "сними их там (Services -> Podkop -> убрать интерфейс -> Save & Apply)."
-warn "Иначе podkop продолжит гнать DNS в удалённый интерфейс: пинг по IP будет,"
-warn "а сайты по именам перестанут открываться. Скрипт podkop НЕ трогает."
+# ---------- детект использования интерфейса в podkop/forkop ----------
+# podkop/forkop хранят привязку в UCI: секция с option interface '<iface>'
+# (connection_type 'vpn'). Читаем uci show и ищем интерфейс как токен '<iface>'.
+# Конфиг podkop/forkop только ЧИТАЕМ, не редактируем.
+podkop_hits() {  # печатает строки конфигов, где встречается интерфейс $1
+  _if="$1"
+  for _pkg in podkop forkop; do
+    uci show "$_pkg" 2>/dev/null | grep -F "'$_if'" | sed "s/^/      $_pkg: /"
+  done
+}
+
+any_podkop_refs() {  # 0, если хоть один интерфейс из списка $1 упомянут
+  for _if in $1; do
+    for _pkg in podkop forkop; do
+      uci show "$_pkg" 2>/dev/null | grep -qF "'$_if'" && return 0
+    done
+  done
+  return 1
+}
+
+warn_podkop_refs() {  # громкое предупреждение по именам ДО удаления; $1 = список
+  _hit=0
+  for _if in $1; do
+    _lines=$(podkop_hits "$_if")
+    [ -z "$_lines" ] && continue
+    if [ "$_hit" = 0 ]; then
+      echo
+      err  "ВНИМАНИЕ: эти интерфейсы ещё подключены в podkop/forkop!"
+      _hit=1
+    fi
+    warn "  '$_if' упомянут здесь:"
+    printf '%s\n' "$_lines"
+  done
+  if [ "$_hit" = 1 ]; then
+    warn "Сними их СНАЧАЛА: LuCI -> Services -> Podkop -> убрать интерфейс -> Save & Apply."
+    warn "Иначе после удаления DNS уйдёт в мёртвый туннель (пинг по IP есть, сайтов нет)."
+    echo
+  fi
+}
+
+restore_dns_if_needed() {  # вызывать после удаления; чинит DNS, если ссылка осталась
+  any_podkop_refs "$REMOVED" || return 0
+  echo
+  err  "podkop/forkop всё ещё ссылается на удалённые интерфейсы — перехват DNS будет"
+  err  "ломать интернет, пока сервис активен (и повторится после reboot при автозапуске)."
+  warn "Правильный фикс: убрать интерфейс в LuCI (Services -> Podkop) и Save & Apply."
+  for _svc in forkop podkop; do
+    [ -x "/etc/init.d/$_svc" ] || continue
+    if ask "Остановить '$_svc' СЕЙЧАС, чтобы вернуть интернет? (selective routing выключится до фикса)"; then
+      "/etc/init.d/$_svc" stop >/dev/null 2>&1 && log "$_svc остановлен."
+    fi
+  done
+  ( fw4 restart >/dev/null 2>&1 || /etc/init.d/firewall restart >/dev/null 2>&1 )
+  /etc/init.d/dnsmasq restart >/dev/null 2>&1
+  log "Firewall и dnsmasq перезапущены. Проверь резолв:  ping ya.ru"
+}
+
+# ---------- 0. общее предупреждение про podkop ----------
+# Точный детект по именам интерфейсов идёт ниже, перед самим удалением
+# (warn_podkop_refs). Здесь — общий контекст. Скрипт podkop НЕ трогает.
+warn "Если удаляемые интерфейсы подключены в podkop/forkop — сними их там ДО удаления"
+warn "(Services -> Podkop -> Save & Apply), иначе потеряешь DNS. Скрипт podkop не трогает."
 echo
 
 # remove_iface NAME — опустить интерфейс, снести его peer-секции и саму секцию
@@ -85,6 +138,7 @@ remove_iface() {
 if [ -n "$IFACE" ]; then
   # явно указан один интерфейс
   if uci -q get "network.$IFACE" >/dev/null; then
+    warn_podkop_refs "$IFACE"
     if ask "Удалить сетевой интерфейс '$IFACE' и его peer-секции?"; then
       remove_iface "$IFACE"
       uci commit network
@@ -104,6 +158,7 @@ else
     n=$(printf '%s\n' "$ifaces" | grep -c .)
     warn "Найдено amneziawg-интерфейсов: $n"
     printf '%s\n' "$ifaces" | sed 's/^/    - /'
+    warn_podkop_refs "$ifaces"
     if ask "Удалить ВСЕ перечисленные интерфейсы и их peer-секции?"; then
       for _if in $ifaces; do
         remove_iface "$_if"
@@ -161,6 +216,9 @@ if ask "Удалить пакеты AmneziaWG из системы?"; then
 else
   log "Пакеты оставлены (рекомендуется, если есть другие AWG-туннели)."
 fi
+
+# ---------- 3.5. восстановление DNS, если podkop ещё ссылается на удалённые ----------
+[ -n "$REMOVED" ] && restore_dns_if_needed
 
 echo
 log "Готово. Podkop не трогался — при необходимости убери интерфейс из его настроек вручную."
