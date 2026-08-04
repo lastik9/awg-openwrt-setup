@@ -9,18 +9,10 @@
 #   sh setup-awg.sh --no-install          # только настройка, без установки пакетов
 #   sh setup-awg.sh --env /path/awg.env   # указать другой env-файл
 #   sh setup-awg.sh --reboot              # тихо перезагрузить при необходимости (без 15-сек отсчёта)
-#   sh setup-awg.sh --mesh                # режим МЕШа (any-to-any LAN<->меш), не podkop
-#   sh setup-awg.sh --mesh --admin 10.0.0.10,10.0.0.11
-#                                         # кому открыть LuCI/SSH узла из меша (по умолчанию никому)
 #
 # Интерактивный мастер спросит имя интерфейса (напр. awg_nl), откроет редактор для
 # вставки .conf и создаст всё сам. Несколько серверов = несколько интерфейсов с
 # разными именами в ОДНОЙ общей firewall-зоне.
-#
-# --mesh: узел становится site-узлом меша (LAN за роутером видит меш и наоборот).
-#   Отличия от podkop-режима: masq выключен (адреса в меше не переписываем),
-#   пересылка lan<->awg в ОБЕ стороны, ICMP по мешу разрешён. Управление узла
-#   (LuCI/SSH) из меша по умолчанию закрыто; открыть точечно — флагом --admin.
 #
 # Интерфейс создаётся ТОЛЬКО если его ещё нет (существующий не затирается).
 
@@ -31,8 +23,6 @@ ENV_FILE="$SCRIPT_DIR/awg.env"
 DO_INSTALL=1
 AUTO_REBOOT=0
 WIZARD=0
-MESH_MODE=0         # 1 = меш (any-to-any), см. --mesh
-ADMIN_IPS=''        # кому открыть LuCI/SSH узла из меша (--admin), пусто = никому
 SHARED_ZONE='awg'   # общая зона для всех awg-интерфейсов
 INSTALLER_URL='https://raw.githubusercontent.com/Slava-Shchipunov/awg-openwrt/refs/heads/master/amneziawg-install.sh'
 
@@ -50,8 +40,6 @@ while [ $# -gt 0 ]; do
     -i|--wizard) WIZARD=1; shift ;;
     --no-install) DO_INSTALL=0; shift ;;
     --reboot) AUTO_REBOOT=1; shift ;;
-    --mesh) MESH_MODE=1; shift ;;
-    --admin) ADMIN_IPS="${2:-}"; MESH_MODE=1; shift 2 || die "--admin требует список адресов через запятую" ;;
     --env) ENV_FILE="${2:-}"; shift 2 || die "--env требует путь" ;;
     -h|--help) grep '^#' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) die "Неизвестный аргумент: $1" ;;
@@ -305,94 +293,18 @@ if [ "${MAKE_ZONE:-0}" = 1 ]; then
       log "Интерфейс $IFACE добавлен в существующую зону $ZONE_NAME."
     fi
   else
-    # masq: в podkop-режиме нужен (трафик наружу через туннель); в меше ВРЕДЕН
-    # (переписывает адреса — conntrack не находит сессию, ответ = Port Unreachable).
-    if [ "$MESH_MODE" = 1 ]; then _masq=0; else _masq=1; fi
-    log "Создаю firewall-зону $ZONE_NAME (input/forward REJECT, output ACCEPT, masq=$_masq, mss)..."
+    log "Создаю firewall-зону $ZONE_NAME (input/forward REJECT, output ACCEPT, masq+mss)..."
     uci set "firewall.$ZONE_NAME=zone"
     uci set "firewall.$ZONE_NAME.name=$ZONE_NAME"
     uci set "firewall.$ZONE_NAME.input=REJECT"
     uci set "firewall.$ZONE_NAME.output=ACCEPT"
     uci set "firewall.$ZONE_NAME.forward=REJECT"
-    uci set "firewall.$ZONE_NAME.masq=$_masq"
+    uci set "firewall.$ZONE_NAME.masq=1"
     uci set "firewall.$ZONE_NAME.mtu_fix=1"
     uci add_list "firewall.$ZONE_NAME.network=$IFACE"
     uci commit firewall
     /etc/init.d/firewall reload >/dev/null 2>&1
-    if [ "$MESH_MODE" = 1 ]; then
-      log "firewall-зона создана (масштаб меша: masq выключен)."
-    else
-      log "firewall-зона создана. Пересылку lan->$ZONE_NAME НЕ добавляю (podkop сам)."
-    fi
-  fi
-
-  # ---- меш-доводка firewall (any-to-any LAN<->меш) ----
-  # В podkop-режиме НЕ выполняется: там маршрутизацией рулит podkop, masq нужен.
-  if [ "$MESH_MODE" = 1 ]; then
-    # на случай, если зона уже существовала с masq=1 (podkop-инсталл раньше) —
-    # для меша принудительно снимаем masq.
-    if [ "$(uci -q get "firewall.$ZONE_NAME.masq" 2>/dev/null)" = "1" ]; then
-      uci set "firewall.$ZONE_NAME.masq=0"
-      warn "Зона $ZONE_NAME была с masq=1 — для меша выключил masq."
-    fi
-
-    # forwarding lan<->awg в ОБЕ стороны (идемпотентно: не плодим дубли)
-    _has_fwd() { # src dest -> 0 если правило src->dest уже есть
-      for s in $(uci show firewall 2>/dev/null \
-                 | sed -n "s/^firewall\.\(@forwarding\[[0-9]*\]\)\.src='$1'/\1/p"); do
-        [ "$(uci -q get "firewall.$s.dest")" = "$2" ] && return 0
-      done
-      return 1
-    }
-    _add_fwd() { # src dest
-      if _has_fwd "$1" "$2"; then
-        log "forwarding $1->$2 уже есть."
-      else
-        f=$(uci add firewall forwarding)
-        uci set "firewall.$f.src=$1"
-        uci set "firewall.$f.dest=$2"
-        log "forwarding $1->$2 добавлен."
-      fi
-    }
-    _add_fwd lan "$ZONE_NAME"
-    _add_fwd "$ZONE_NAME" lan
-
-    # ICMP по мешу к самому роутеру (узлы должны пинговаться; input зоны=REJECT)
-    if ! uci show firewall | grep -q "name='Allow-$ZONE_NAME-ICMP'"; then
-      r=$(uci add firewall rule)
-      uci set "firewall.$r.name=Allow-$ZONE_NAME-ICMP"
-      uci set "firewall.$r.src=$ZONE_NAME"
-      uci set "firewall.$r.proto=icmp"
-      uci set "firewall.$r.icmp_type=echo-request"
-      uci set "firewall.$r.family=ipv4"
-      uci set "firewall.$r.target=ACCEPT"
-      log "ICMP из меша к роутеру разрешён."
-    fi
-
-    # управление узлом (LuCI/SSH) из меша — ТОЛЬКО если задан --admin
-    if [ -n "$ADMIN_IPS" ]; then
-      if ! uci show firewall | grep -q "name='Allow-$ZONE_NAME-admin'"; then
-        r=$(uci add firewall rule)
-        uci set "firewall.$r.name=Allow-$ZONE_NAME-admin"
-        uci set "firewall.$r.src=$ZONE_NAME"
-        uci set "firewall.$r.proto=tcp"
-        uci set "firewall.$r.dest_port=22 80 443"
-        uci set "firewall.$r.target=ACCEPT"
-        OLDIFS=$IFS; IFS=','
-        for aip in $ADMIN_IPS; do
-          aip=$(echo "$aip" | tr -d ' '); [ -n "$aip" ] && uci add_list "firewall.$r.src_ip=$aip"
-        done
-        IFS=$OLDIFS
-        log "Управление узла (SSH/LuCI) из меша открыто для: $ADMIN_IPS"
-      fi
-    else
-      warn "Управление узла из меша НЕ открыто (нет --admin). LuCI/SSH доступны только из LAN узла."
-      warn "  Открыть точечно позже:  --admin 10.0.0.10   (свои роуминг-клиенты)"
-    fi
-
-    uci commit firewall
-    /etc/init.d/firewall reload >/dev/null 2>&1
-    log "Меш-доводка firewall применена."
+    log "firewall-зона создана. Пересылку lan->$ZONE_NAME НЕ добавляю (podkop сам)."
   fi
 fi
 
@@ -446,11 +358,7 @@ if [ "$proto_now" != "amneziawg" ]; then
       warn "Применить конфигурацию позже вручную:  reboot"
       warn "После загрузки интерфейс $IFACE поднимется сам. Проверка:  awg show $IFACE"
       echo
-      if [ "$MESH_MODE" = 1 ]; then
-        log "Дальше (после reboot): проверь меш —  awg show $IFACE  и  ping 10.0.0.1 (хаб)."
-      else
-        log "Дальше (после reboot): Services -> Podkop -> тип VPN, интерфейс $IFACE -> Save & Apply."
-      fi
+      log "Дальше (после reboot): Services -> Podkop -> тип VPN, интерфейс $IFACE -> Save & Apply."
       ;;
     *)
       log "Перезагружаю роутер..."
@@ -481,10 +389,4 @@ else
 fi
 
 echo
-if [ "$MESH_MODE" = 1 ]; then
-  log "Готово (режим меша). Узел в меше: LAN за роутером видит меш и наоборот."
-  log "Проверка с хаба:  ping <WG-адрес узла>  и  ping <LAN-адрес роутера>."
-  [ -z "$ADMIN_IPS" ] && log "Управление узла из меша закрыто — открыть:  --admin 10.0.0.10"
-else
-  log "Готово. Дальше: Services -> Podkop -> тип VPN, интерфейс $IFACE -> Save & Apply."
-fi
+log "Готово. Дальше: Services -> Podkop -> тип VPN, интерфейс $IFACE -> Save & Apply."
