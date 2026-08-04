@@ -40,7 +40,6 @@ ADMIN_IPS=''        # кому открыть LuCI/SSH узла из меша (-
 NO_ADMIN=0          # 1 = НЕ открывать управление узла из меша (--no-admin)
 RECONNECT=0         # 1 = обновить существующий интерфейс (ключ хаба/endpoint/allowed_ips), см. --reconnect
 MESH_SUBNET='10.0.0.0/24'  # источник по умолчанию для доступа к управлению узла в mesh-режиме
-ADMIN_PORTS='22 80 443 9090'  # порты узла, открываемые из меша: SSH(22)/LuCI(80,443)+Clash-панель(9090)
 SHARED_ZONE='awg'   # общая зона для всех awg-интерфейсов
 INSTALLER_URL='https://raw.githubusercontent.com/Slava-Shchipunov/awg-openwrt/refs/heads/master/amneziawg-install.sh'
 
@@ -428,14 +427,14 @@ if [ "${MAKE_ZONE:-0}" = 1 ]; then
         uci set "firewall.$r.name=Allow-$ZONE_NAME-admin"
         uci set "firewall.$r.src=$ZONE_NAME"
         uci set "firewall.$r.proto=tcp"
-        uci set "firewall.$r.dest_port=$ADMIN_PORTS"
+        uci set "firewall.$r.dest_port=22 80 443"
         uci set "firewall.$r.target=ACCEPT"
         OLDIFS=$IFS; IFS=','
         for aip in $_admin_src; do
           aip=$(echo "$aip" | tr -d ' '); [ -n "$aip" ] && uci add_list "firewall.$r.src_ip=$aip"
         done
         IFS=$OLDIFS
-        log "Управление узла (порты $ADMIN_PORTS) из меша открыто для: $_admin_src"
+        log "Управление узла (SSH/LuCI) из меша открыто для: $_admin_src"
       else
         log "Правило Allow-$ZONE_NAME-admin уже есть — не дублирую."
       fi
@@ -540,7 +539,7 @@ if [ "$MESH_MODE" = 1 ]; then
   elif [ -n "$ADMIN_IPS" ]; then
     log "Управление узла из меша открыто для: $ADMIN_IPS"
   else
-    log "Управление узла (порты $ADMIN_PORTS) из меша открыто для всей $MESH_SUBNET."
+    log "Управление узла (SSH/LuCI) из меша открыто для всей $MESH_SUBNET."
   fi
 else
   log "Готово. Дальше: Services -> Podkop -> тип VPN, интерфейс $IFACE -> Save & Apply."
