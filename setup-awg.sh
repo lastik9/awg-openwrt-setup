@@ -10,11 +10,8 @@
 #   sh setup-awg.sh --env /path/awg.env   # указать другой env-файл
 #   sh setup-awg.sh --reboot              # тихо перезагрузить при необходимости (без 15-сек отсчёта)
 #   sh setup-awg.sh --mesh                # режим МЕШа (any-to-any LAN<->меш), не podkop
-#                                         # LuCI/SSH узла из меша ОТКРЫТЫ по умолчанию (вся 10.0.0.0/24)
 #   sh setup-awg.sh --mesh --admin 10.0.0.10,10.0.0.11
-#                                         # сузить доступ к LuCI/SSH узла до этих адресов
-#   sh setup-awg.sh --mesh --no-admin     # не открывать управление узла из меша (только из LAN узла)
-#   sh setup-awg.sh --mesh --reconnect    # обновить пир (ключ/endpoint/allowed_ips хаба) без пересоздания
+#                                         # кому открыть LuCI/SSH узла из меша (по умолчанию никому)
 #
 # Интерактивный мастер спросит имя интерфейса (напр. awg_nl), откроет редактор для
 # вставки .conf и создаст всё сам. Несколько серверов = несколько интерфейсов с
@@ -23,8 +20,7 @@
 # --mesh: узел становится site-узлом меша (LAN за роутером видит меш и наоборот).
 #   Отличия от podkop-режима: masq выключен (адреса в меше не переписываем),
 #   пересылка lan<->awg в ОБЕ стороны, ICMP по мешу разрешён. Управление узла
-#   (LuCI/SSH) из меша по умолчанию ОТКРЫТО для всей mesh-подсети; сузить — --admin,
-#   закрыть — --no-admin.
+#   (LuCI/SSH) из меша по умолчанию закрыто; открыть точечно — флагом --admin.
 #
 # Интерфейс создаётся ТОЛЬКО если его ещё нет (существующий не затирается).
 
@@ -36,10 +32,7 @@ DO_INSTALL=1
 AUTO_REBOOT=0
 WIZARD=0
 MESH_MODE=0         # 1 = меш (any-to-any), см. --mesh
-ADMIN_IPS=''        # кому открыть LuCI/SSH узла из меша (--admin); пусто = вся mesh-подсеть (см. NO_ADMIN)
-NO_ADMIN=0          # 1 = НЕ открывать управление узла из меша (--no-admin)
-RECONNECT=0         # 1 = обновить существующий интерфейс (ключ хаба/endpoint/allowed_ips), см. --reconnect
-MESH_SUBNET='10.0.0.0/24'  # источник по умолчанию для доступа к управлению узла в mesh-режиме
+ADMIN_IPS=''        # кому открыть LuCI/SSH узла из меша (--admin), пусто = никому
 SHARED_ZONE='awg'   # общая зона для всех awg-интерфейсов
 INSTALLER_URL='https://raw.githubusercontent.com/Slava-Shchipunov/awg-openwrt/refs/heads/master/amneziawg-install.sh'
 
@@ -59,8 +52,6 @@ while [ $# -gt 0 ]; do
     --reboot) AUTO_REBOOT=1; shift ;;
     --mesh) MESH_MODE=1; shift ;;
     --admin) ADMIN_IPS="${2:-}"; MESH_MODE=1; shift 2 || die "--admin требует список адресов через запятую" ;;
-    --no-admin) NO_ADMIN=1; shift ;;
-    --reconnect) RECONNECT=1; shift ;;
     --env) ENV_FILE="${2:-}"; shift 2 || die "--env требует путь" ;;
     -h|--help) grep '^#' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) die "Неизвестный аргумент: $1" ;;
@@ -224,41 +215,8 @@ command -v awg >/dev/null || die "awg не найден после устано�
 
 # ---------- проверка: интерфейс уже есть? ----------
 if uci -q get "network.$IFACE" >/dev/null; then
-  if [ "$RECONNECT" = 1 ]; then
-    # --reconnect: интерфейс не пересоздаём (ключ узла/адреса сохраняем), но
-    # ОБНОВЛЯЕМ параметры пира из env — на случай смены ключа/endpoint хаба
-    # (грабля #10: после пересборки хаба узел смотрит на мёртвый public_key).
-    log "--reconnect: обновляю параметры пира интерфейса $IFACE из env..."
-    # ищем peer-секцию этого интерфейса (обычно @amneziawg_<iface>[0])
-    _psec=""
-    for s in $(uci show network 2>/dev/null \
-               | sed -n "s/^network\.\(@amneziawg_$IFACE\[[0-9]*\]\)=.*/\1/p"); do
-      _psec="$s"; break
-    done
-    if [ -z "$_psec" ]; then
-      warn "peer-секция для $IFACE не найдена — нечего обновлять. Продолжаю как есть."
-    else
-      uci set "network.$_psec.public_key=$PEER_PUBLIC_KEY"
-      uci set "network.$_psec.endpoint_host=$ENDPOINT_HOST"
-      uci set "network.$_psec.endpoint_port=$ENDPOINT_PORT"
-      [ -n "${KEEPALIVE:-}" ] && uci set "network.$_psec.persistent_keepalive=$KEEPALIVE"
-      if [ -n "${PRESHARED_KEY:-}" ]; then uci set "network.$_psec.preshared_key=$PRESHARED_KEY"
-      else uci -q delete "network.$_psec.preshared_key"; fi
-      # allowed_ips пересобираем из env (топология меша могла измениться)
-      uci -q delete "network.$_psec.allowed_ips"
-      OLDIFS=$IFS; IFS=','
-      for ip in $ALLOWED_IPS; do
-        ip=$(echo "$ip" | tr -d ' '); [ -n "$ip" ] && uci add_list "network.$_psec.allowed_ips=$ip"
-      done
-      IFS=$OLDIFS
-      uci commit network
-      log "peer обновлён (public_key/endpoint/allowed_ips из env)."
-    fi
-  else
-    warn "Секция network.$IFACE уже существует — НЕ трогаю её (режим 'создать только если нет')."
-    warn "Сменился ключ/endpoint хаба? Обнови пир не пересоздавая:  sh setup-awg.sh --mesh --reconnect"
-    warn "Пересоздать целиком: uci delete network.$IFACE и её peer-секции, потом запусти снова."
-  fi
+  warn "Секция network.$IFACE уже существует — НЕ трогаю её (режим 'создать только если нет')."
+  warn "Если нужно пересоздать: uci delete network.$IFACE и удали её peer-секции, потом запусти снова."
   SKIP_IFACE=1
 else
   SKIP_IFACE=0
@@ -411,17 +369,8 @@ if [ "${MAKE_ZONE:-0}" = 1 ]; then
       log "ICMP из меша к роутеру разрешён."
     fi
 
-    # управление узлом (LuCI/SSH) из меша.
-    # По умолчанию в mesh-режиме ОТКРЫВАЕМ для всей mesh-подсети ($MESH_SUBNET) —
-    # чтобы узел сразу был управляем из меша (грабля #9: input зоны=REJECT рубит TCP).
-    #   --admin a,b,c  → сузить до конкретных адресов;
-    #   --no-admin     → не открывать совсем (доступ только из LAN узла).
-    if [ "$NO_ADMIN" = 1 ]; then
-      warn "Управление узла из меша НЕ открыто (--no-admin). LuCI/SSH доступны только из LAN узла."
-      warn "  Открыть позже:  sh setup-awg.sh --mesh --reconnect   (дефолт = вся $MESH_SUBNET)"
-    else
-      # чей адрес разрешаем: список из --admin, иначе вся mesh-подсеть
-      if [ -n "$ADMIN_IPS" ]; then _admin_src="$ADMIN_IPS"; else _admin_src="$MESH_SUBNET"; fi
+    # управление узлом (LuCI/SSH) из меша — ТОЛЬКО если задан --admin
+    if [ -n "$ADMIN_IPS" ]; then
       if ! uci show firewall | grep -q "name='Allow-$ZONE_NAME-admin'"; then
         r=$(uci add firewall rule)
         uci set "firewall.$r.name=Allow-$ZONE_NAME-admin"
@@ -430,14 +379,15 @@ if [ "${MAKE_ZONE:-0}" = 1 ]; then
         uci set "firewall.$r.dest_port=22 80 443"
         uci set "firewall.$r.target=ACCEPT"
         OLDIFS=$IFS; IFS=','
-        for aip in $_admin_src; do
+        for aip in $ADMIN_IPS; do
           aip=$(echo "$aip" | tr -d ' '); [ -n "$aip" ] && uci add_list "firewall.$r.src_ip=$aip"
         done
         IFS=$OLDIFS
-        log "Управление узла (SSH/LuCI) из меша открыто для: $_admin_src"
-      else
-        log "Правило Allow-$ZONE_NAME-admin уже есть — не дублирую."
+        log "Управление узла (SSH/LuCI) из меша открыто для: $ADMIN_IPS"
       fi
+    else
+      warn "Управление узла из меша НЕ открыто (нет --admin). LuCI/SSH доступны только из LAN узла."
+      warn "  Открыть точечно позже:  --admin 10.0.0.10   (свои роуминг-клиенты)"
     fi
 
     uci commit firewall
@@ -534,13 +484,7 @@ echo
 if [ "$MESH_MODE" = 1 ]; then
   log "Готово (режим меша). Узел в меше: LAN за роутером видит меш и наоборот."
   log "Проверка с хаба:  ping <WG-адрес узла>  и  ping <LAN-адрес роутера>."
-  if [ "$NO_ADMIN" = 1 ]; then
-    log "Управление узла из меша закрыто (--no-admin) — доступ только из LAN узла."
-  elif [ -n "$ADMIN_IPS" ]; then
-    log "Управление узла из меша открыто для: $ADMIN_IPS"
-  else
-    log "Управление узла (SSH/LuCI) из меша открыто для всей $MESH_SUBNET."
-  fi
+  [ -z "$ADMIN_IPS" ] && log "Управление узла из меша закрыто — открыть:  --admin 10.0.0.10"
 else
   log "Готово. Дальше: Services -> Podkop -> тип VPN, интерфейс $IFACE -> Save & Apply."
 fi
